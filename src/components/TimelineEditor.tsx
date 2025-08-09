@@ -542,9 +542,15 @@ export function TimelineEditor() {
               onClick={() => setPlaying(!isPlaying)}
             >
               {isPlaying ? (
-                <Pause className="h-4 w-4" />
+                <>
+                  <Pause className="h-4 w-4" />
+                  Pause
+                </>
               ) : (
-                <Play className="h-4 w-4" />
+                <>
+                  <Play className="h-4 w-4" />
+                  Play
+                </>
               )}
             </Button>
             <Button
@@ -555,7 +561,10 @@ export function TimelineEditor() {
                 setCurrentTime(0);
               }}
             >
-              <Square className="h-4 w-4" />
+              <>
+                <Square className="h-4 w-4" />
+                Stop
+              </>
             </Button>
           </div>
 
@@ -731,7 +740,7 @@ export function TimelineEditor() {
             {activeTimeline.keyframes.map((keyframe) => (
               <div
                 key={keyframe.id}
-                className={`absolute top-2 bottom-2 border-2 border-primary bg-primary/20 rounded hover:bg-primary/30 group ${
+                className={`absolute top-2 bottom-2 bg-primary/20 rounded hover:bg-primary/30 group ${
                   isDragging && dragOperation?.keyframeId === keyframe.id
                     ? "opacity-70"
                     : ""

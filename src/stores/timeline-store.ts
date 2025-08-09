@@ -25,6 +25,7 @@ export interface Timeline {
   loop: boolean;
   yoyo: boolean;
   keyframes: Keyframe[];
+  targetShape?: TargetShape;
 }
 
 export type TargetShape = 
@@ -80,6 +81,7 @@ const createDemoTimeline = (): Timeline => ({
   playbackType: 'normal',
   loop: true,
   yoyo: true,
+  targetShape: 'square',
   keyframes: [
     {
       id: "demo-keyframe-1",

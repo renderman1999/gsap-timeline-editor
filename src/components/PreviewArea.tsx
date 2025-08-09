@@ -6,33 +6,14 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useTimelineStore, type TargetShape } from "@/stores/timeline-store";
 import { Button } from "@/components/ui/button";
 import { Repeat, RefreshCw } from "lucide-react";
+import { Square, Heart, Bell, Menu, AudioLines } from "lucide-react";
 import {
-  // Basic shape icon
-  Square,
-  // Group 1
-  Heart,
-  Zap,
-  Smile,
-  Cloud,
-  Bell,
-  Music,
-  Camera,
-  Coffee,
-  ArrowLeft,
-  ArrowRight,
-  Waves,
-  Facebook,
-  Github,
-  Instagram,
-  Linkedin,
-  Mail,
-  Menu,
-  Share2,
-  Twitter,
-  User,
-  Youtube,
-} from "lucide-react";
-import { CategorySelect } from "@/components/ui/category-select";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Register ScrollTrigger plugin
 if (typeof window !== "undefined") {
@@ -78,62 +59,16 @@ export function PreviewArea() {
             }}
           />
         );
-      case "star":
-        return (
-          <div className={`w-20 h-20 ${baseClasses}`}>
-            <svg viewBox="0 0 24 24" fill="white" className="w-full h-full">
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-            </svg>
-          </div>
-        );
 
-      // Popular Icons
-      case "user" as TargetShape:
-        return <User className={iconClasses} />;
-      case "menu" as TargetShape:
-        return <Menu className={iconClasses} />;
-      case "music" as TargetShape:
-        return <Music className={iconClasses} />;
-      case "waves" as TargetShape:
-        return <Waves className={iconClasses} />;
-      case "arrow-right" as TargetShape:
-        return <ArrowRight className={iconClasses} />;
-      case "arrow-left" as TargetShape:
-        return <ArrowLeft className={iconClasses} />;
+      // Icons
       case "heart" as TargetShape:
-        return <Heart className={iconClasses} />;
-      case "zap" as TargetShape:
-        return <Zap className={iconClasses} />;
-      case "smile" as TargetShape:
-        return <Smile className={iconClasses} />;
+        return <Heart className={iconClasses} fill="white" />;
       case "bell" as TargetShape:
         return <Bell className={iconClasses} />;
-      
-      // Social Icons
-      case "github" as TargetShape:
-        return <Github className={iconClasses} />;
-      case "twitter" as TargetShape:
-        return <Twitter className={iconClasses} />;
-      case "instagram" as TargetShape:
-        return <Instagram className={iconClasses} />;
-      case "facebook" as TargetShape:
-        return <Facebook className={iconClasses} />;
-      case "linkedin" as TargetShape:
-        return <Linkedin className={iconClasses} />;
-      case "youtube" as TargetShape:
-        return <Youtube className={iconClasses} />;
-      case "mail" as TargetShape:
-        return <Mail className={iconClasses} />;
-      case "share" as TargetShape:
-        return <Share2 className={iconClasses} />;
-      
-      // Legacy icons (kept for backward compatibility)
-      case "cloud":
-        return <Cloud className={iconClasses} />;
-      case "camera":
-        return <Camera className={iconClasses} />;
-      case "coffee":
-        return <Coffee className={iconClasses} />;
+      case "menu" as TargetShape:
+        return <Menu className={iconClasses} />;
+      case "audio-lines" as TargetShape:
+        return <AudioLines className={iconClasses} />;
 
       // Default (square)
       default:
@@ -248,6 +183,13 @@ export function PreviewArea() {
     return tl;
   };
 
+  // Effect to sync target shape when active timeline changes
+  useEffect(() => {
+    if (activeTimeline?.targetShape) {
+      setTargetShape(activeTimeline.targetShape);
+    }
+  }, [activeTimeline, setTargetShape]);
+
   useEffect(() => {
     if (timelineRef.current) {
       timelineRef.current.kill();
@@ -279,137 +221,44 @@ export function PreviewArea() {
     };
   }, []);
 
-  // Define target shape categories for the CategorySelect component
-  const targetShapeCategories: {
-    name: string;
-    options: { value: TargetShape; label: string; icon?: React.ReactNode }[];
-  }[] = [
+  // Define target shape options for the Select component with preview icons
+  const targetShapeOptions = [
     {
-      name: "Shapes",
-      options: [
-        {
-          value: "square" as TargetShape,
-          label: "Square",
-          icon: <Square className="h-4 w-4" />,
-        },
-        {
-          value: "circle" as TargetShape,
-          label: "Circle",
-          icon: <div className="h-4 w-4 rounded-full bg-current" />,
-        },
-        {
-          value: "triangle" as TargetShape,
-          label: "Triangle",
-          icon: (
-            <div className="h-0 w-0 border-x-4 border-x-transparent border-b-[8px]" />
-          ),
-        },
-        {
-          value: "star" as TargetShape,
-          label: "Star",
-          icon: <div className="text-xs">★</div>,
-        },
-      ],
+      value: "square",
+      label: "Square",
+      icon: <Square className="h-4 w-4" fill="currentColor" />,
     },
     {
-      name: "Popular Icons",
-      options: [
-        {
-          value: "user" as TargetShape,
-          label: "User",
-          icon: <User className="h-4 w-4" />,
-        },
-        {
-          value: "menu" as TargetShape,
-          label: "Menu",
-          icon: <Menu className="h-4 w-4" />,
-        },
-        {
-          value: "music" as TargetShape,
-          label: "Music",
-          icon: <Music className="h-4 w-4" />,
-        },
-        {
-          value: "waves" as TargetShape,
-          label: "Audio Waves",
-          icon: <Waves className="h-4 w-4" />,
-        },
-        {
-          value: "arrow-right" as TargetShape,
-          label: "Arrow Right",
-          icon: <ArrowRight className="h-4 w-4" />,
-        },
-        {
-          value: "arrow-left" as TargetShape,
-          label: "Arrow Left",
-          icon: <ArrowLeft className="h-4 w-4" />,
-        },
-        {
-          value: "heart" as TargetShape,
-          label: "Heart",
-          icon: <Heart className="h-4 w-4" />,
-        },
-        {
-          value: "zap" as TargetShape,
-          label: "Zap",
-          icon: <Zap className="h-4 w-4" />,
-        },
-        {
-          value: "smile" as TargetShape,
-          label: "Smile",
-          icon: <Smile className="h-4 w-4" />,
-        },
-        {
-          value: "bell" as TargetShape,
-          label: "Bell",
-          icon: <Bell className="h-4 w-4" />,
-        },
-      ],
+      value: "circle",
+      label: "Circle",
+      icon: <div className="h-4 w-4 rounded-full bg-current" />,
     },
     {
-      name: "Social Icons",
-      options: [
-        {
-          value: "github" as TargetShape,
-          label: "GitHub",
-          icon: <Github className="h-4 w-4" />,
-        },
-        {
-          value: "twitter" as TargetShape,
-          label: "Twitter",
-          icon: <Twitter className="h-4 w-4" />,
-        },
-        {
-          value: "instagram" as TargetShape,
-          label: "Instagram",
-          icon: <Instagram className="h-4 w-4" />,
-        },
-        {
-          value: "facebook" as TargetShape,
-          label: "Facebook",
-          icon: <Facebook className="h-4 w-4" />,
-        },
-        {
-          value: "linkedin" as TargetShape,
-          label: "LinkedIn",
-          icon: <Linkedin className="h-4 w-4" />,
-        },
-        {
-          value: "youtube" as TargetShape,
-          label: "YouTube",
-          icon: <Youtube className="h-4 w-4" />,
-        },
-        {
-          value: "mail" as TargetShape,
-          label: "Mail",
-          icon: <Mail className="h-4 w-4" />,
-        },
-        {
-          value: "share" as TargetShape,
-          label: "Share",
-          icon: <Share2 className="h-4 w-4" />,
-        },
-      ],
+      value: "triangle",
+      label: "Triangle",
+      icon: (
+        <div className="h-0 w-0 border-x-4 border-x-transparent border-b-[8px] border-b-current" />
+      ),
+    },
+    {
+      value: "heart",
+      label: "Heart",
+      icon: <Heart className="h-4 w-4" fill="currentColor" />,
+    },
+    {
+      value: "bell",
+      label: "Bell",
+      icon: <Bell className="h-4 w-4" />,
+    },
+    {
+      value: "menu",
+      label: "Menu",
+      icon: <Menu className="h-4 w-4" />,
+    },
+    {
+      value: "audio-lines",
+      label: "Audio Lines",
+      icon: <AudioLines className="h-4 w-4" />,
     },
   ];
 
@@ -419,12 +268,36 @@ export function PreviewArea() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">Preview</h3>
-            <CategorySelect
-              categories={targetShapeCategories}
-              value={targetShape}
-              onValueChange={(value: TargetShape) => setTargetShape(value)}
-              triggerClassName="w-32"
-            />
+            <Select
+              value={activeTimeline?.targetShape || "square"}
+              defaultValue="square"
+              onValueChange={(value: TargetShape) => {
+                if (activeTimeline) {
+                  // Update the timeline's target shape
+                  updateTimeline(activeTimeline.id, { targetShape: value });
+                  // Also update the global target shape for immediate preview
+                  setTargetShape(value);
+                }
+              }}
+            >
+              <SelectTrigger className="w-32">
+                <SelectValue placeholder="Select shape" />
+              </SelectTrigger>
+              <SelectContent>
+                {targetShapeOptions.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    className="flex items-center"
+                  >
+                    <div className="flex items-center gap-1">
+                      <div className="mr-2 flex-shrink-0">{option.icon}</div>
+                      <span>{option.label}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -440,9 +313,15 @@ export function PreviewArea() {
             <Button
               size="sm"
               variant="ghost"
-              className={activeTimeline.loop ? "text-primary" : "text-muted-foreground"}
+              className={
+                activeTimeline.loop ? "text-primary" : "text-muted-foreground"
+              }
               title={activeTimeline.loop ? "Disable loop" : "Enable loop"}
-              onClick={() => updateTimeline(activeTimeline.id, { loop: !activeTimeline.loop })}
+              onClick={() =>
+                updateTimeline(activeTimeline.id, {
+                  loop: !activeTimeline.loop,
+                })
+              }
             >
               <Repeat className="h-4 w-4" />
             </Button>
@@ -450,9 +329,15 @@ export function PreviewArea() {
               <Button
                 size="sm"
                 variant="ghost"
-                className={activeTimeline.yoyo ? "text-primary" : "text-muted-foreground"}
+                className={
+                  activeTimeline.yoyo ? "text-primary" : "text-muted-foreground"
+                }
                 title={activeTimeline.yoyo ? "Disable yo-yo" : "Enable yo-yo"}
-                onClick={() => updateTimeline(activeTimeline.id, { yoyo: !activeTimeline.yoyo })}
+                onClick={() =>
+                  updateTimeline(activeTimeline.id, {
+                    yoyo: !activeTimeline.yoyo,
+                  })
+                }
               >
                 <RefreshCw className="h-4 w-4" />
               </Button>
