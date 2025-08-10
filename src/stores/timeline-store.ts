@@ -72,7 +72,7 @@ const createDemoTimeline = (): Timeline => ({
   playbackType: 'normal',
   loop: true,
   yoyo: true,
-  targetShape: 'square',
+  targetShape: "audio-lines",
   keyframes: [
     {
       id: "demo-keyframe-1",
@@ -129,7 +129,7 @@ export const useTimelineStore = create<TimelineState>()(
     (set, get) => ({
       timelines: [createDemoTimeline()],
       activeTimelineId: 'demo',
-      targetShape: 'zap',
+      targetShape: "audio-lines",
       isPlaying: false,
       currentTime: 0,
       zoom: 1,

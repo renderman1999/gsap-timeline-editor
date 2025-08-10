@@ -572,7 +572,7 @@ export function TimelineEditor() {
             <PopoverTrigger asChild>
               <Button
                 size="sm"
-                variant="outline"
+                variant="default"
                 className="gap-2"
                 onClick={() => {
                   if (!isAddKeyframeOpen) {

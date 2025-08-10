@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Edit2, Trash2, Play, Repeat, RefreshCw } from "lucide-react";
+import { Plus, Copy, Trash2, Play, Repeat, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -75,6 +75,23 @@ export function TimelinesSidebar() {
   const handleStartEdit = (timeline: { id: string; name: string }) => {
     setEditingId(timeline.id);
     setEditingName(timeline.name);
+  };
+
+  const handleDuplicateTimeline = (timelineId: string) => {
+    const timeline = timelines.find(t => t.id === timelineId);
+    if (!timeline) return;
+    
+    const name = generateUniqueTimelineName(`${timeline.name} Copy`);
+    
+    addTimeline({
+      name,
+      playbackType: timeline.playbackType,
+      scrollLength: timeline.playbackType === "scroll" ? timeline.scrollLength : undefined,
+      loop: timeline.loop,
+      yoyo: timeline.yoyo,
+      keyframes: JSON.parse(JSON.stringify(timeline.keyframes)),
+      targetShape: timeline.targetShape,
+    });
   };
 
   const handleSaveEdit = () => {
@@ -238,9 +255,15 @@ export function TimelinesSidebar() {
               ) : (
                 <>
                   <div className="flex-1">
-                    <div className="flex items-center gap-2">
+                    <div 
+                      className="flex items-center gap-2 hover:text-primary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartEdit(timeline);
+                      }}
+                    >
                       <Play className="h-3 w-3 text-primary" />
-                      <span className="font-medium">{timeline.name}</span>
+                      <span className="font-medium cursor-text">{timeline.name}</span>
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
                       {timeline.keyframes.length} keyframes
@@ -252,16 +275,18 @@ export function TimelinesSidebar() {
                     <Button
                       size="sm"
                       variant="ghost"
+                      title="Duplicate timeline"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleStartEdit(timeline);
+                        handleDuplicateTimeline(timeline.id);
                       }}
                     >
-                      <Edit2 className="h-3 w-3" />
+                      <Copy className="h-3 w-3" />
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
+                      title="Delete timeline"
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteTimeline(timeline.id);
