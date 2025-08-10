@@ -116,7 +116,7 @@ export function TimelinesSidebar() {
           <DialogTrigger asChild>
             <Button size="sm" variant="outline" className="gap-2">
               <Plus className="h-4 w-4" />
-              New Timeline
+              Add New
             </Button>
           </DialogTrigger>
           <DialogContent>
@@ -125,11 +125,9 @@ export function TimelinesSidebar() {
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label htmlFor="name">Name</Label>
                 <Input
                   id="name"
-                  placeholder="New Animation"
-                  value={newTimelineForm.name}
+                  value={newTimelineForm.name || "New Animation"}
                   onChange={(e) =>
                     setNewTimelineForm((prev) => ({
                       ...prev,
@@ -139,7 +137,7 @@ export function TimelinesSidebar() {
                 />
               </div>
 
-              <div>
+              {/* <div>
                 <Label htmlFor="playback">Playback</Label>
                 <Select
                   value={newTimelineForm.playbackType}
@@ -158,9 +156,9 @@ export function TimelinesSidebar() {
                     <SelectItem value="scroll">Scroll</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
+              </div> */}
 
-              {newTimelineForm.playbackType === "scroll" && (
+              {/* {newTimelineForm.playbackType === "scroll" && (
                 <div>
                   <Label htmlFor="scrollLength">Length (%)</Label>
                   <Input
@@ -175,7 +173,7 @@ export function TimelinesSidebar() {
                     }
                   />
                 </div>
-              )}
+              )} */}
 
               <div className="flex items-center space-x-2">
                 <Switch
@@ -268,7 +266,7 @@ export function TimelinesSidebar() {
                     <div className="text-xs text-muted-foreground mt-1">
                       {timeline.keyframes.length} keyframes
                       {timeline.loop && " • Loop"}
-                      {timeline.playbackType === "scroll" && " • Scroll"}
+                      {/* {timeline.playbackType === "scroll" && " • Scroll"} */}
                     </div>
                   </div>
                   <div className="flex gap-1">
