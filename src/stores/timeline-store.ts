@@ -28,25 +28,16 @@ export interface Timeline {
   targetShape?: TargetShape;
 }
 
-export type TargetShape = 
+export type TargetShape =
   // Basic shapes
-  'square' | 'circle' | 'triangle' | 'star' |
-  // Lucide icons - Group 1
-  'heart' | 'zap' | 'smile' | 'cloud' | 'bell' | 'music' | 'camera' | 'coffee' |
-  // Lucide icons - Group 2
-  'activity' | 'airplay' | 'alarm-clock' | 'alert-circle' | 'alert-triangle' | 'anchor' |
-  // Lucide icons - Group 3
-  'aperture' | 'archive' | 'award' | 'battery' | 'bluetooth' | 'bookmark' |
-  // Lucide icons - Group 4
-  'calendar' | 'compass' | 'cpu' | 'crown' | 'database' | 'disc' |
-  // Lucide icons - Group 5
-  'droplet' | 'eye' | 'feather' | 'flag' | 'flame' | 'flower' |
-  // Lucide icons - Group 6
-  'gift' | 'globe' | 'headphones' | 'home' | 'image' | 'key' |
-  // Lucide icons - Group 7
-  'layers' | 'leaf' | 'lightbulb' | 'map' | 'moon' | 'palette' |
-  // Lucide icons - Group 8
-  'paperclip' | 'pizza' | 'rocket' | 'shield' | 'sun' | 'target';
+  | "square"
+  | "circle"
+  | "triangle"
+  // Icons
+  | "heart"
+  | "bell"
+  | "menu"
+  | "audio-lines";
 
 interface TimelineState {
   timelines: Timeline[];
