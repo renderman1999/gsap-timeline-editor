@@ -218,6 +218,7 @@ export function TimelineEditor() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDragging, dragOperation]);
 
   const getLastKeyframeEnd = () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Copy, Trash2, Play, Repeat, RefreshCw } from "lucide-react";
+import { Plus, Copy, Trash2, Play, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -13,13 +13,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useTimelineStore } from "@/stores/timeline-store";
 
@@ -78,15 +71,16 @@ export function TimelinesSidebar() {
   };
 
   const handleDuplicateTimeline = (timelineId: string) => {
-    const timeline = timelines.find(t => t.id === timelineId);
+    const timeline = timelines.find((t) => t.id === timelineId);
     if (!timeline) return;
-    
+
     const name = generateUniqueTimelineName(`${timeline.name} Copy`);
-    
+
     addTimeline({
       name,
       playbackType: timeline.playbackType,
-      scrollLength: timeline.playbackType === "scroll" ? timeline.scrollLength : undefined,
+      scrollLength:
+        timeline.playbackType === "scroll" ? timeline.scrollLength : undefined,
       loop: timeline.loop,
       yoyo: timeline.yoyo,
       keyframes: JSON.parse(JSON.stringify(timeline.keyframes)),
@@ -253,15 +247,21 @@ export function TimelinesSidebar() {
               ) : (
                 <>
                   <div className="flex-1">
-                    <div 
-                      className="flex items-center gap-2 hover:text-primary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleStartEdit(timeline);
-                      }}
-                    >
-                      <Play className="h-3 w-3 text-primary" />
-                      <span className="font-medium cursor-text">{timeline.name}</span>
+                    <div className="flex items-center gap-2">
+                      <Play className="h-3 w-3 text-primary shrink-0" />
+                      <span className="font-medium">
+                        {timeline.name}{" "}
+                        <div
+                          className="ml-1 cursor-pointer"
+                          style={{ display: "inline-block" }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartEdit(timeline);
+                          }}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </div>
+                      </span>
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
                       {timeline.keyframes.length} keyframes

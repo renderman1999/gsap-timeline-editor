@@ -5,7 +5,11 @@ import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useTimelineStore, type TargetShape } from "@/stores/timeline-store";
 import { Button } from "@/components/ui/button";
-import { Repeat, RefreshCw } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Code } from "lucide-react";
+import { toast } from "react-toastify";
+import { generateTimelineCode } from "@/lib/timeline-utils";
 import { Square, Heart, Bell, Menu, AudioLines } from "lucide-react";
 import {
   Select,
@@ -26,9 +30,28 @@ export function PreviewArea() {
     targetShape,
     setTargetShape,
     isPlaying,
+    currentTime,
     setCurrentTime,
     updateTimeline,
   } = useTimelineStore();
+
+  const handleExportCode = () => {
+    const activeTimeline = getActiveTimeline();
+    if (!activeTimeline) {
+      toast.error("Please select a timeline to export code");
+      return;
+    }
+
+    const code = generateTimelineCode(activeTimeline);
+    navigator.clipboard
+      .writeText(code)
+      .then(() => {
+        toast.success("GSAP code copied to clipboard!");
+      })
+      .catch(() => {
+        toast.error("Failed to copy code to clipboard");
+      });
+  };
 
   const containerRef = useRef<HTMLDivElement>(null);
   const targetRef = useRef<HTMLDivElement>(null);
@@ -201,6 +224,7 @@ export function PreviewArea() {
     if (timelineRef.current && isPlaying) {
       timelineRef.current.play();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTimeline, targetShape]);
 
   useEffect(() => {
@@ -212,6 +236,19 @@ export function PreviewArea() {
       }
     }
   }, [isPlaying]);
+
+  // Effect to handle currentTime changes (including when Stop button is pressed)
+  useEffect(() => {
+    if (timelineRef.current && !isPlaying) {
+      // When currentTime is set to 0 (Stop button pressed)
+      if (currentTime === 0) {
+        timelineRef.current.time(0);
+      } else {
+        // For manual scrubbing
+        timelineRef.current.time(currentTime);
+      }
+    }
+  }, [currentTime, isPlaying]);
 
   useEffect(() => {
     return () => {
@@ -263,99 +300,103 @@ export function PreviewArea() {
   ];
 
   return (
-    <div className="w-96 border-l border-border bg-card p-6">
-      <div className="space-y-6">
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">Preview</h3>
-            <Select
-              value={activeTimeline?.targetShape || "square"}
-              defaultValue="square"
-              onValueChange={(value: TargetShape) => {
-                if (activeTimeline) {
-                  // Update the timeline's target shape
-                  updateTimeline(activeTimeline.id, { targetShape: value });
-                  // Also update the global target shape for immediate preview
-                  setTargetShape(value);
-                }
-              }}
-            >
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="Select shape" />
-              </SelectTrigger>
-              <SelectContent>
-                {targetShapeOptions.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    value={option.value}
-                    className="flex items-center"
-                  >
-                    <div className="flex items-center gap-1">
-                      <div className="mr-2 flex-shrink-0">{option.icon}</div>
-                      <span>{option.label}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+    <div className="w-96 p-6">
+      {activeTimeline && (
+        <div className="space-y-6">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Preview</h3>
+              <Select
+                value={activeTimeline.targetShape}
+                onValueChange={(value: TargetShape) => {
+                  if (activeTimeline) {
+                    // Update the timeline's target shape
+                    updateTimeline(activeTimeline.id, { targetShape: value });
+                    // Also update the global target shape for immediate preview
+                    setTargetShape(value);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="Select shape" />
+                </SelectTrigger>
+                <SelectContent>
+                  {targetShapeOptions.map((option) => (
+                    <SelectItem
+                      key={option.value}
+                      value={option.value}
+                      className="flex items-center"
+                    >
+                      <div className="flex items-center gap-1">
+                        <div className="mr-2 flex-shrink-0">{option.icon}</div>
+                        <span>{option.label}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-        </div>
 
-        <div
-          ref={containerRef}
-          className="bg-black rounded-lg p-8 min-h-64 flex items-center justify-center relative overflow-hidden"
-        >
-          <div ref={targetRef}>{renderShape()}</div>
-        </div>
+          <div
+            ref={containerRef}
+            className="bg-black rounded-lg p-8 min-h-64 flex items-center justify-center relative overflow-hidden"
+          >
+            <div ref={targetRef}>{renderShape()}</div>
+          </div>
 
-        {activeTimeline && (
-          <div className="flex items-center justify-center gap-2 mt-4">
-            <Button
-              size="sm"
-              variant="ghost"
-              className={
-                activeTimeline.loop ? "text-primary" : "text-muted-foreground"
-              }
-              title={activeTimeline.loop ? "Disable loop" : "Enable loop"}
-              onClick={() =>
-                updateTimeline(activeTimeline.id, {
-                  loop: !activeTimeline.loop,
-                })
-              }
-            >
-              <Repeat className="h-4 w-4" />
-            </Button>
-            {activeTimeline.loop && (
+          {activeTimeline && (
+            <div className="flex items-center justify-center gap-2">
+              <div className="flex items-center gap-2 mr-2">
+                <Switch
+                  id="loop-toggle"
+                  checked={activeTimeline.loop}
+                  onCheckedChange={(checked) =>
+                    updateTimeline(activeTimeline.id, {
+                      loop: checked,
+                    })
+                  }
+                  className="scale-75"
+                />
+                <Label htmlFor="loop-toggle" className="text-xs cursor-pointer">
+                  Loop
+                </Label>
+              </div>
+
+              {activeTimeline.loop && (
+                <div className="flex items-center gap-2 mr-2">
+                  <Switch
+                    id="yoyo-toggle"
+                    checked={activeTimeline.yoyo}
+                    onCheckedChange={(checked) =>
+                      updateTimeline(activeTimeline.id, {
+                        yoyo: checked,
+                      })
+                    }
+                    className="scale-75"
+                  />
+                  <Label
+                    htmlFor="yoyo-toggle"
+                    className="text-xs cursor-pointer"
+                  >
+                    Boomerang?
+                  </Label>
+                </div>
+              )}
+
               <Button
                 size="sm"
-                variant="ghost"
-                className={
-                  activeTimeline.yoyo ? "text-primary" : "text-muted-foreground"
-                }
-                title={activeTimeline.yoyo ? "Disable yo-yo" : "Enable yo-yo"}
-                onClick={() =>
-                  updateTimeline(activeTimeline.id, {
-                    yoyo: !activeTimeline.yoyo,
-                  })
-                }
+                variant="outline"
+                className="gap-2"
+                onClick={handleExportCode}
               >
-                <RefreshCw className="h-4 w-4" />
+                <Code className="h-4 w-4" />
+                Export Code
               </Button>
-            )}
-          </div>
-        )}
-
-        {activeTimeline && (
-          <div className="text-sm text-muted-foreground space-y-1">
-            <div>Timeline: {activeTimeline.name}</div>
-            <div>Keyframes: {activeTimeline.keyframes.length}</div>
-            <div>Type: {activeTimeline.playbackType}</div>
-            {activeTimeline.loop && (
-              <div>Loop: {activeTimeline.yoyo ? "Yo-yo" : "Normal"}</div>
-            )}
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

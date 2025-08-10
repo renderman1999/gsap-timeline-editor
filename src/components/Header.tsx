@@ -2,27 +2,22 @@
 
 import { useRef } from "react";
 import Link from "next/link";
-import { Star, Download, Upload, Code, CircleDollarSign } from "lucide-react";
+import { Star, Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTimelineStore } from "@/stores/timeline-store";
-import {
-  downloadTimelines,
-  importTimelines,
-  generateTimelineCode,
-} from "@/lib/timeline-utils";
+import { downloadTimelines, importTimelines } from "@/lib/timeline-utils";
 import { toast } from "react-toastify";
 
 export function Header() {
-  const { timelines, getActiveTimeline, addTimeline } = useTimelineStore();
+  const { timelines, addTimeline } = useTimelineStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const activeTimeline = getActiveTimeline();
 
   const handleExport = () => {
     try {
       downloadTimelines(timelines);
       toast.success("Timelines exported successfully!");
     } catch (error) {
-      toast.error("Failed to export timelines");
+      toast.error(`Failed to export timelines: ${error}`);
     }
   };
 
@@ -43,6 +38,7 @@ export function Header() {
         importedTimelines.forEach((timeline) => {
           // Generate new ID to avoid conflicts
           const { id, ...timelineWithoutId } = timeline;
+          console.log(`importing timeline ${id}...`);
           addTimeline(timelineWithoutId);
         });
 
@@ -59,29 +55,13 @@ export function Header() {
     event.target.value = "";
   };
 
-  const handleExportCode = () => {
-    if (!activeTimeline) {
-      toast.error("Please select a timeline to export code");
-      return;
-    }
-
-    const code = generateTimelineCode(activeTimeline);
-    navigator.clipboard
-      .writeText(code)
-      .then(() => {
-        toast.success("GSAP code copied to clipboard!");
-      })
-      .catch(() => {
-        toast.error("Failed to copy code to clipboard");
-      });
-  };
-
   return (
     <header className="border-b border-border bg-card px-6 py-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-primary">
             <i>GSAP Timeline Editor</i>
+            <span className="text-xs text-muted-foreground ml-2">v1.2</span>
           </h1>
           <p className="text-sm text-muted-foreground">
             Create, edit, preview and share GSAP animations with ease
@@ -107,17 +87,6 @@ export function Header() {
           >
             <Upload className="h-4 w-4" />
             Import
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            onClick={handleExportCode}
-            disabled={!activeTimeline}
-          >
-            <Code className="h-4 w-4" />
-            Export Code
           </Button>
 
           <Link

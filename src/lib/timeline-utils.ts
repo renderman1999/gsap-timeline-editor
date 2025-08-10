@@ -1,4 +1,4 @@
-import { Timeline } from '@/stores/timeline-store';
+import { Timeline } from "@/stores/timeline-store";
 
 export interface TimelineExport {
   version: string;
@@ -8,145 +8,170 @@ export interface TimelineExport {
 
 export const exportTimelines = (timelines: Timeline[]): string => {
   const exportData: TimelineExport = {
-    version: '1.0.0',
+    version: "1.2.0",
     timelines,
-    exportedAt: new Date().toISOString()
+    exportedAt: new Date().toISOString(),
   };
-  
+
   return JSON.stringify(exportData, null, 2);
 };
 
 export const importTimelines = (jsonString: string): Timeline[] => {
   try {
     const data = JSON.parse(jsonString) as TimelineExport;
-    
+
     // Validate the structure
     if (!data.timelines || !Array.isArray(data.timelines)) {
-      throw new Error('Invalid timeline data structure');
+      throw new Error("Invalid timeline data structure");
     }
-    
+
     // Validate each timeline
     data.timelines.forEach((timeline, index) => {
-      if (!timeline.id || !timeline.name || !Array.isArray(timeline.keyframes)) {
+      if (
+        !timeline.id ||
+        !timeline.name ||
+        !Array.isArray(timeline.keyframes)
+      ) {
         throw new Error(`Invalid timeline at index ${index}`);
       }
     });
-    
+
     return data.timelines;
   } catch (error) {
-    throw new Error(`Failed to import timelines: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(
+      `Failed to import timelines: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 };
 
 export const downloadTimelines = (timelines: Timeline[], filename?: string) => {
   const jsonString = exportTimelines(timelines);
-  const blob = new Blob([jsonString], { type: 'application/json' });
+  const blob = new Blob([jsonString], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-  
-  const link = document.createElement('a');
+
+  const link = document.createElement("a");
   link.href = url;
-  link.download = filename || `gsap-timelines-${new Date().toISOString().split('T')[0]}.json`;
+  link.download =
+    filename || `gsap-timelines-${new Date().toISOString().split("T")[0]}.json`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  
+
   URL.revokeObjectURL(url);
 };
 
 export const generateTimelineCode = (timeline: Timeline): string => {
   const lines: string[] = [];
-  
+
   lines.push(`// GSAP Timeline: ${timeline.name}`);
   lines.push(`const tl = gsap.timeline({`);
-  
+
   if (timeline.loop) {
     lines.push(`  repeat: -1,`);
     if (timeline.yoyo) {
       lines.push(`  yoyo: true,`);
     }
   }
-  
+
   lines.push(`});`);
-  lines.push('');
-  
+  lines.push("");
+
   // Sort keyframes by delay
-  const sortedKeyframes = [...timeline.keyframes].sort((a, b) => a.delay - b.delay);
-  
+  const sortedKeyframes = [...timeline.keyframes].sort(
+    (a, b) => a.delay - b.delay
+  );
+
   sortedKeyframes.forEach((keyframe) => {
     const transformProps: string[] = [];
-    
+
     keyframe.transforms.forEach((transform) => {
       switch (transform.type) {
-        case 'move':
-          if (transform.values.x !== 0) transformProps.push(`x: ${transform.values.x}`);
-          if (transform.values.y !== 0) transformProps.push(`y: ${transform.values.y}`);
+        case "move":
+          // Include x and y values even if they're 0
+          transformProps.push(`x: ${transform.values.x}`);
+          transformProps.push(`y: ${transform.values.y}`);
           break;
-        case 'rotate':
+        case "rotate":
           transformProps.push(`rotation: ${transform.values.rotation}`);
           break;
-        case 'opacity':
+        case "opacity":
           transformProps.push(`opacity: ${transform.values.opacity}`);
           break;
-        case 'skew':
-          if (transform.values.skewX !== 0) transformProps.push(`skewX: ${transform.values.skewX}`);
-          if (transform.values.skewY !== 0) transformProps.push(`skewY: ${transform.values.skewY}`);
+        case "skew":
+          // Include skewX and skewY values even if they're 0
+          transformProps.push(`skewX: ${transform.values.skewX}`);
+          transformProps.push(`skewY: ${transform.values.skewY}`);
           break;
-        case 'filter':
+        case "scale":
+          // Include scaleX and scaleY values even if they're 1
+          transformProps.push(`scaleX: ${transform.values.scaleX}`);
+          transformProps.push(`scaleY: ${transform.values.scaleY}`);
+          break;
+        case "filter":
           const filterType = transform.values.filter;
           const filterValue = transform.values.value;
-          let filterString = '';
-          
+          let filterString = "";
+
           switch (filterType) {
-            case 'blur':
+            case "blur":
               filterString = `blur(${filterValue}px)`;
               break;
-            case 'brightness':
+            case "brightness":
               filterString = `brightness(${filterValue}%)`;
               break;
-            case 'contrast':
+            case "contrast":
               filterString = `contrast(${filterValue}%)`;
               break;
-            case 'grayscale':
+            case "grayscale":
               filterString = `grayscale(${filterValue}%)`;
               break;
-            case 'hue-rotate':
+            case "hue-rotate":
               filterString = `hue-rotate(${filterValue}deg)`;
               break;
-            case 'invert':
+            case "invert":
               filterString = `invert(${filterValue}%)`;
               break;
-            case 'opacity':
+            case "opacity":
               filterString = `opacity(${filterValue}%)`;
               break;
-            case 'saturate':
+            case "saturate":
               filterString = `saturate(${filterValue}%)`;
               break;
-            case 'sepia':
+            case "sepia":
               filterString = `sepia(${filterValue}%)`;
               break;
           }
-          
+
           transformProps.push(`filter: "${filterString}"`);
           break;
       }
     });
-    
-    const propsString = transformProps.length > 0 ? `{ ${transformProps.join(', ')}, duration: ${keyframe.duration / 1000}, ease: "${keyframe.easing}" }` : `{ duration: ${keyframe.duration / 1000}, ease: "${keyframe.easing}" }`;
-    
+
+    const propsString =
+      transformProps.length > 0
+        ? `{ ${transformProps.join(", ")}, duration: ${
+            keyframe.duration / 1000
+          }, ease: "${keyframe.easing}" }`
+        : `{ duration: ${keyframe.duration / 1000}, ease: "${
+            keyframe.easing
+          }" }`;
+
     lines.push(`tl.to(".target", ${propsString}, ${keyframe.delay});`);
   });
-  
-  if (timeline.playbackType === 'scroll') {
-    lines.push('');
-    lines.push('// Add ScrollTrigger');
-    lines.push('ScrollTrigger.create({');
-    lines.push('  animation: tl,');
+
+  if (timeline.playbackType === "scroll") {
+    lines.push("");
+    lines.push("// Add ScrollTrigger");
+    lines.push("ScrollTrigger.create({");
+    lines.push("  animation: tl,");
     lines.push('  trigger: ".trigger-element",');
     lines.push(`  start: "top center",`);
     lines.push(`  end: "${timeline.scrollLength || 300}% center",`);
-    lines.push('  scrub: true');
-    lines.push('});');
+    lines.push("  scrub: true");
+    lines.push("});");
   }
-  
-  return lines.join('\n');
+
+  return lines.join("\n");
 };
