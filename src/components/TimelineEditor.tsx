@@ -516,7 +516,7 @@ export function TimelineEditor() {
     <div className="flex-1 flex flex-col">
       {/* Controls */}
       <div className="border-b border-border p-4">
-        <div className="flex justify-between items-center gap-4">
+        <div className="flex justify-between items-center gap-4 max-w-[690px] mx-auto w-full">
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -710,115 +710,129 @@ export function TimelineEditor() {
 
       {/* Timeline */}
       <div className="flex-1 p-4">
-        <div className="relative bg-muted/20 rounded-lg p-4 min-h-32">
-          <div
-            ref={timelineRef}
-            className="relative h-16 bg-card rounded border"
-            style={{ width: `${totalDuration * 100 * zoom}px` }}
-          >
-            {/* Time markers */}
-            <div className="absolute inset-0">
-              {Array.from({ length: Math.ceil(totalDuration) + 1 }, (_, i) => (
+        {/* Fixed width container */}
+        <div className="relative bg-muted/20 rounded-lg p-4 min-h-32 w-[690px] mx-auto">
+          {/* Scrollable container */}
+          <div className="overflow-x-auto">
+            {/* Timeline content that can expand beyond container */}
+            <div
+              ref={timelineRef}
+              className="relative h-16 bg-card rounded border"
+              style={{ width: `${totalDuration * 100 * zoom}px` }}
+            >
+              {/* Time markers */}
+              <div className="absolute inset-0">
+                {Array.from(
+                  { length: Math.ceil(totalDuration) + 1 },
+                  (_, i) => (
+                    <div
+                      key={i}
+                      className="absolute top-0 bottom-0 border-l border-border/50"
+                      style={{ left: `${(i / totalDuration) * 100}%` }}
+                    >
+                      <span className="absolute -top-6 text-xs text-muted-foreground">
+                        {i}s
+                      </span>
+                    </div>
+                  )
+                )}
+              </div>
+
+              {/* Current time indicator */}
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-primary z-10"
+                style={{ left: `${(currentTime / totalDuration) * 100}%` }}
+              />
+
+              {/* Keyframes */}
+              {activeTimeline.keyframes.map((keyframe) => (
                 <div
-                  key={i}
-                  className="absolute top-0 bottom-0 border-l border-border/50"
-                  style={{ left: `${(i / totalDuration) * 100}%` }}
+                  key={keyframe.id}
+                  className={`absolute top-2 bottom-2 bg-primary/20 rounded hover:bg-primary/30 group ${
+                    isDragging && dragOperation?.keyframeId === keyframe.id
+                      ? "opacity-70"
+                      : ""
+                  }`}
+                  style={{
+                    left: `${(keyframe.delay / totalDuration) * 100}%`,
+                    width: `${
+                      (keyframe.duration / 1000 / totalDuration) * 100
+                    }%`,
+                    cursor: isDragging
+                      ? dragOperation?.type === "move"
+                        ? "grabbing"
+                        : "ew-resize"
+                      : "pointer",
+                  }}
                 >
-                  <span className="absolute -top-6 text-xs text-muted-foreground">
-                    {i}s
-                  </span>
+                  <div
+                    className="h-full bg-primary/20 border border-primary rounded-lg cursor-grab active:cursor-grabbing relative group"
+                    onMouseDown={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const rightEdgeThreshold = 10; // pixels from right edge to trigger resize
+
+                      if (e.clientX > rect.right - rightEdgeThreshold) {
+                        handleMouseDown(e, keyframe, "resize");
+                      } else {
+                        handleMouseDown(e, keyframe, "move");
+                      }
+                    }}
+                    onClick={() => {
+                      if (didDrag) return;
+                      handleEditKeyframe(keyframe);
+                    }}
+                  >
+                    <div className="absolute inset-0 flex flex-col p-1 overflow-hidden">
+                      <div className="flex justify-start items-center">
+                        <span
+                          className="text-xxs font-medium text-primary"
+                          suppressHydrationWarning
+                        >
+                          {keyframe.duration}ms / {keyframe.easing}
+                        </span>
+                      </div>
+                      <div className="flex items-center mt-1">
+                        <span
+                          className="text-xxs text-primary font-medium bg-primary/10 px-1 rounded"
+                          suppressHydrationWarning
+                        >
+                          {keyframe.transforms.length} transforms
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Resize handles */}
+                    <div
+                      className="absolute top-0 bottom-0 left-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity"
+                      onMouseDown={(e) =>
+                        handleMouseDown(e, keyframe, "resize")
+                      }
+                    />
+                    <div
+                      className="absolute top-0 bottom-0 right-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity"
+                      onMouseDown={(e) =>
+                        handleMouseDown(e, keyframe, "resize")
+                      }
+                    />
+                    <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-5 w-5 text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (activeTimeline) {
+                            deleteKeyframe(activeTimeline.id, keyframe.id);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
-
-            {/* Current time indicator */}
-            <div
-              className="absolute top-0 bottom-0 w-0.5 bg-primary z-10"
-              style={{ left: `${(currentTime / totalDuration) * 100}%` }}
-            />
-
-            {/* Keyframes */}
-            {activeTimeline.keyframes.map((keyframe) => (
-              <div
-                key={keyframe.id}
-                className={`absolute top-2 bottom-2 bg-primary/20 rounded hover:bg-primary/30 group ${
-                  isDragging && dragOperation?.keyframeId === keyframe.id
-                    ? "opacity-70"
-                    : ""
-                }`}
-                style={{
-                  left: `${(keyframe.delay / totalDuration) * 100}%`,
-                  width: `${(keyframe.duration / 1000 / totalDuration) * 100}%`,
-                  cursor: isDragging
-                    ? dragOperation?.type === "move"
-                      ? "grabbing"
-                      : "ew-resize"
-                    : "pointer",
-                }}
-              >
-                <div
-                  className="h-full bg-primary/20 border border-primary rounded-lg cursor-grab active:cursor-grabbing relative group"
-                  onMouseDown={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const rightEdgeThreshold = 10; // pixels from right edge to trigger resize
-
-                    if (e.clientX > rect.right - rightEdgeThreshold) {
-                      handleMouseDown(e, keyframe, "resize");
-                    } else {
-                      handleMouseDown(e, keyframe, "move");
-                    }
-                  }}
-                  onClick={() => {
-                    if (didDrag) return;
-                    handleEditKeyframe(keyframe);
-                  }}
-                >
-                  <div className="absolute inset-0 flex flex-col p-1 overflow-hidden">
-                    <div className="flex justify-start items-center">
-                      <span
-                        className="text-xxs font-medium text-primary"
-                        suppressHydrationWarning
-                      >
-                        {keyframe.duration}ms / {keyframe.easing}
-                      </span>
-                    </div>
-                    <div className="flex items-center mt-1">
-                      <span
-                        className="text-xxs text-primary font-medium bg-primary/10 px-1 rounded"
-                        suppressHydrationWarning
-                      >
-                        {keyframe.transforms.length} transforms
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Resize handles */}
-                  <div
-                    className="absolute top-0 bottom-0 left-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity"
-                    onMouseDown={(e) => handleMouseDown(e, keyframe, "resize")}
-                  />
-                  <div
-                    className="absolute top-0 bottom-0 right-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity"
-                    onMouseDown={(e) => handleMouseDown(e, keyframe, "resize")}
-                  />
-                  <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-5 w-5 text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (activeTimeline) {
-                          deleteKeyframe(activeTimeline.id, keyframe.id);
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       </div>
