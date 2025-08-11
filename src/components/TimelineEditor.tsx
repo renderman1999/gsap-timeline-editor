@@ -554,7 +554,7 @@ export function TimelineEditor() {
     );
   }
 
-  const totalDuration = Math.max(5, getLastKeyframeEnd() + 1);
+  const totalDuration = getLastKeyframeEnd();
 
   return (
     <div className="flex-1 flex flex-col">
@@ -786,23 +786,23 @@ export function TimelineEditor() {
           {/* Scrollable container with time markers */}
           <div className="overflow-x-auto">
             {/* Time markers container - positioned above timeline, scrolls with content */}
-            <div className="relative h-6 mb-2" style={{ width: `${totalDuration * 100 * zoom}px` }}>
-              {Array.from(
-                { length: Math.ceil(totalDuration) + 1 },
-                (_, i) => (
-                  <div
-                    key={i}
-                    className="absolute top-0 h-6"
-                    style={{ left: `${(i / totalDuration) * 100}%` }}
-                  >
-                    <span className="absolute top-0 text-xs text-muted-foreground">
-                      {i}s
-                    </span>
-                  </div>
-                )
-              )}
+            <div
+              className="relative h-6 mb-2"
+              style={{ width: `${totalDuration * 100 * zoom}px` }}
+            >
+              {Array.from({ length: Math.ceil(totalDuration) + 1 }, (_, i) => (
+                <div
+                  key={i}
+                  className="absolute top-0 h-6"
+                  style={{ left: `${(i / totalDuration) * 100}%` }}
+                >
+                  <span className="absolute top-0 text-xs text-muted-foreground">
+                    {i}s
+                  </span>
+                </div>
+              ))}
             </div>
-            
+
             {/* Timeline content that can expand beyond container */}
             <div
               ref={timelineRef}
