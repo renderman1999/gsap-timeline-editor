@@ -84,6 +84,11 @@ export const generateTimelineCode = (timeline: Timeline): string => {
   );
 
   sortedKeyframes.forEach((keyframe) => {
+    // Skip keyframes without transforms
+    if (keyframe.transforms.length === 0) {
+      return;
+    }
+
     const transformProps: string[] = [];
 
     keyframe.transforms.forEach((transform) => {

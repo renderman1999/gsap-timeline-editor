@@ -93,7 +93,12 @@ export function TimelineEditor() {
     setZoom,
   } = useTimelineStore();
 
-  const [isAddKeyframeOpen, setIsAddKeyframeOpen] = useState(false);
+  // Removed isAddKeyframeOpen - no longer using Add popover
+  const [isEditKeyframeOpen, setIsEditKeyframeOpen] = useState(false);
+  const [editKeyframePosition, setEditKeyframePosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [editingKeyframe, setEditingKeyframe] = useState<Keyframe | null>(null);
   const [keyframeForm, setKeyframeForm] = useState({
     delay: 0,
@@ -286,24 +291,14 @@ export function TimelineEditor() {
   };
 
   const handleSaveKeyframe = () => {
-    if (!activeTimeline) return;
+    if (!activeTimeline || !editingKeyframe) return;
 
-    const keyframeData = {
-      delay: keyframeForm.delay,
-      duration: keyframeForm.duration,
-      easing: keyframeForm.easing,
-      transforms: keyframeForm.transforms,
-    };
+    updateKeyframe(activeTimeline.id, editingKeyframe.id, keyframeForm);
 
-    if (editingKeyframe) {
-      updateKeyframe(activeTimeline.id, editingKeyframe.id, keyframeData);
-      setEditingKeyframe(null);
-    } else {
-      addKeyframe(activeTimeline.id, keyframeData);
-    }
-
+    setIsEditKeyframeOpen(false);
+    setEditingKeyframe(null);
+    setEditKeyframePosition(null);
     resetForm();
-    setIsAddKeyframeOpen(false);
   };
 
   const resetForm = () => {
@@ -315,7 +310,7 @@ export function TimelineEditor() {
     });
   };
 
-  const handleEditKeyframe = (keyframe: Keyframe) => {
+  const handleEditKeyframe = (keyframe: Keyframe, event?: React.MouseEvent) => {
     setEditingKeyframe(keyframe);
     setKeyframeForm({
       delay: keyframe.delay,
@@ -323,7 +318,56 @@ export function TimelineEditor() {
       easing: keyframe.easing,
       transforms: keyframe.transforms,
     });
-    setIsAddKeyframeOpen(true);
+
+    // Set position for edit popover if event is provided
+    if (event) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      setEditKeyframePosition({
+        x: rect.left + rect.width / 2,
+        y: rect.top,
+      });
+    }
+
+    setIsEditKeyframeOpen(true);
+  };
+
+  const handleAddKeyframe = () => {
+    if (!activeTimeline) return;
+
+    // Create default keyframe
+    const defaultKeyframe = {
+      delay: 0,
+      duration: 1000,
+      easing: "power2.inOut",
+      transforms: [],
+    };
+
+    // Add the keyframe to the timeline
+    addKeyframe(activeTimeline.id, defaultKeyframe);
+
+    // Get the newly created keyframe (it will be the last one)
+    const updatedTimeline = getActiveTimeline();
+    if (updatedTimeline) {
+      const newKeyframe =
+        updatedTimeline.keyframes[updatedTimeline.keyframes.length - 1];
+
+      // Set up form and open edit dialog
+      setEditingKeyframe(newKeyframe);
+      setKeyframeForm({
+        delay: newKeyframe.delay,
+        duration: newKeyframe.duration,
+        easing: newKeyframe.easing,
+        transforms: newKeyframe.transforms,
+      });
+
+      // Position the edit dialog in the center of the screen
+      setEditKeyframePosition({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      });
+
+      setIsEditKeyframeOpen(true);
+    }
   };
 
   const renderTransformFields = (transform: Transform) => {
@@ -516,7 +560,7 @@ export function TimelineEditor() {
     <div className="flex-1 flex flex-col">
       {/* Controls */}
       <div className="border-b border-border p-4">
-        <div className="flex justify-between items-center gap-4 max-w-[690px] mx-auto w-full">
+        <div className="flex justify-between items-center gap-4 max-w-[700px] mx-auto w-full">
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -569,149 +613,176 @@ export function TimelineEditor() {
             </Button>
           </div>
 
-          <Popover open={isAddKeyframeOpen} onOpenChange={setIsAddKeyframeOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                size="sm"
-                variant="default"
-                className="gap-2"
-                onClick={() => {
-                  if (!isAddKeyframeOpen) {
-                    resetForm();
-                    setEditingKeyframe(null);
-                  }
-                }}
-              >
-                <Plus className="h-4 w-4" />
-                Add Keyframe
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-96" align="start">
-              <div className="space-y-4">
+          <Button
+            size="sm"
+            variant="default"
+            className="gap-2"
+            onClick={handleAddKeyframe}
+          >
+            <Plus className="h-4 w-4" />
+            Add Keyframe
+          </Button>
+        </div>
+      </div>
+
+      {/* Edit Keyframe Popover - positioned relative to keyframe */}
+      {isEditKeyframeOpen && editKeyframePosition && (
+        <div
+          className="fixed z-50"
+          style={{
+            left: Math.max(
+              16,
+              Math.min(editKeyframePosition.x - 192, window.innerWidth - 400)
+            ), // Center and keep within viewport
+            top: Math.max(16, editKeyframePosition.y - 400), // Position above keyframe with margin
+            transformOrigin: "bottom",
+          }}
+        >
+          <div className="bg-popover border rounded-md shadow-md p-4 w-96 max-h-[80vh]">
+            <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="flex items-center justify-between">
                 <h3 className="font-semibold">
-                  {editingKeyframe ? "Edit Keyframe" : "Add Keyframe"}
+                  Edit Keyframe{" "}
+                  {editingKeyframe && activeTimeline
+                    ? activeTimeline.keyframes.findIndex(
+                        (k) => k.id === editingKeyframe.id
+                      ) + 1
+                    : ""}
                 </h3>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setIsEditKeyframeOpen(false);
+                    setEditingKeyframe(null);
+                    setEditKeyframePosition(null);
+                    resetForm();
+                  }}
+                >
+                  ×
+                </Button>
+              </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Delay (s)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={keyframeForm.delay}
-                      onChange={(e) =>
-                        setKeyframeForm((prev) => ({
-                          ...prev,
-                          delay: parseFloat(e.target.value) || 0,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <Label>Duration (ms)</Label>
-                    <Input
-                      type="number"
-                      value={keyframeForm.duration}
-                      onChange={(e) =>
-                        setKeyframeForm((prev) => ({
-                          ...prev,
-                          duration: parseInt(e.target.value) || 1000,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Easing</Label>
+                  <Label>Delay (s)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={keyframeForm.delay}
+                    onChange={(e) =>
+                      setKeyframeForm((prev) => ({
+                        ...prev,
+                        delay: parseFloat(e.target.value) || 0,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Duration (ms)</Label>
+                  <Input
+                    type="number"
+                    value={keyframeForm.duration}
+                    onChange={(e) =>
+                      setKeyframeForm((prev) => ({
+                        ...prev,
+                        duration: parseInt(e.target.value) || 1000,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label>Easing</Label>
+                <Select
+                  value={keyframeForm.easing}
+                  onValueChange={(value) =>
+                    setKeyframeForm((prev) => ({ ...prev, easing: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GSAP_EASINGS.map((easing) => (
+                      <SelectItem key={easing} value={easing}>
+                        {easing}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <Label>Transforms</Label>
                   <Select
-                    value={keyframeForm.easing}
-                    onValueChange={(value) =>
-                      setKeyframeForm((prev) => ({ ...prev, easing: value }))
+                    onValueChange={(value: TransformType) =>
+                      handleAddTransform(value)
                     }
                   >
-                    <SelectTrigger>
-                      <SelectValue />
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Add Transform" />
                     </SelectTrigger>
                     <SelectContent>
-                      {GSAP_EASINGS.map((easing) => (
-                        <SelectItem key={easing} value={easing}>
-                          {easing}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="move">Move</SelectItem>
+                      <SelectItem value="scale">Scale</SelectItem>
+                      <SelectItem value="rotate">Rotate</SelectItem>
+                      <SelectItem value="opacity">Opacity</SelectItem>
+                      <SelectItem value="skew">Skew</SelectItem>
+                      <SelectItem value="filter">Filter</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label>Transforms</Label>
-                    <Select
-                      onValueChange={(value: TransformType) =>
-                        handleAddTransform(value)
-                      }
-                    >
-                      <SelectTrigger className="w-40">
-                        <SelectValue placeholder="Add Transform" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="move">Move</SelectItem>
-                        <SelectItem value="scale">Scale</SelectItem>
-                        <SelectItem value="rotate">Rotate</SelectItem>
-                        <SelectItem value="opacity">Opacity</SelectItem>
-                        <SelectItem value="skew">Skew</SelectItem>
-                        <SelectItem value="filter">Filter</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-3">
-                    {keyframeForm.transforms.map((transform) => (
-                      <Card key={transform.id} className="p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium capitalize">
-                            {transform.type}
-                          </span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => removeTransform(transform.id)}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        {renderTransformFields(transform)}
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-4">
-                  <Button onClick={handleSaveKeyframe} className="flex-1">
-                    {editingKeyframe ? "Update" : "Add"} Keyframe
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setIsAddKeyframeOpen(false);
-                      setEditingKeyframe(null);
-                      resetForm();
-                    }}
-                  >
-                    Cancel
-                  </Button>
+                <div className="space-y-3">
+                  {keyframeForm.transforms.map((transform) => (
+                    <Card key={transform.id} className="p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium capitalize">
+                          {transform.type}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => removeTransform(transform.id)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      {renderTransformFields(transform)}
+                    </Card>
+                  ))}
                 </div>
               </div>
-            </PopoverContent>
-          </Popover>
+
+              <div className="flex gap-2 pt-4">
+                <Button onClick={handleSaveKeyframe} className="flex-1">
+                  Update Keyframe
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsEditKeyframeOpen(false);
+                    setEditingKeyframe(null);
+                    setEditKeyframePosition(null);
+                    resetForm();
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Timeline */}
       <div className="flex-1 p-4">
         {/* Fixed width container */}
-        <div className="relative bg-muted/20 rounded-lg p-4 min-h-32 w-[690px] mx-auto">
+        <div className="relative bg-muted/20 rounded-lg p-4 min-h-32 w-[700px] mx-auto">
           {/* Scrollable container */}
           <div className="overflow-x-auto">
             {/* Timeline content that can expand beyond container */}
@@ -748,7 +819,7 @@ export function TimelineEditor() {
               {activeTimeline.keyframes.map((keyframe) => (
                 <div
                   key={keyframe.id}
-                  className={`absolute top-2 bottom-2 bg-primary/20 rounded hover:bg-primary/30 group ${
+                  className={`absolute top-2 bottom-2 bg-primary/20 rounded hover:bg-primary/30 hover:z-20 group ${
                     isDragging && dragOperation?.keyframeId === keyframe.id
                       ? "opacity-70"
                       : ""
@@ -777,9 +848,9 @@ export function TimelineEditor() {
                         handleMouseDown(e, keyframe, "move");
                       }
                     }}
-                    onClick={() => {
+                    onClick={(e) => {
                       if (didDrag) return;
-                      handleEditKeyframe(keyframe);
+                      handleEditKeyframe(keyframe, e);
                     }}
                   >
                     <div className="absolute inset-0 flex flex-col p-1 overflow-hidden">
