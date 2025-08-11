@@ -783,15 +783,33 @@ export function TimelineEditor() {
       <div className="flex-1 p-4">
         {/* Fixed width container */}
         <div className="relative bg-muted/20 rounded-lg p-4 min-h-32 w-[700px] mx-auto">
-          {/* Scrollable container */}
+          {/* Scrollable container with time markers */}
           <div className="overflow-x-auto">
+            {/* Time markers container - positioned above timeline, scrolls with content */}
+            <div className="relative h-6 mb-2" style={{ width: `${totalDuration * 100 * zoom}px` }}>
+              {Array.from(
+                { length: Math.ceil(totalDuration) + 1 },
+                (_, i) => (
+                  <div
+                    key={i}
+                    className="absolute top-0 h-6"
+                    style={{ left: `${(i / totalDuration) * 100}%` }}
+                  >
+                    <span className="absolute top-0 text-xs text-muted-foreground">
+                      {i}s
+                    </span>
+                  </div>
+                )
+              )}
+            </div>
+            
             {/* Timeline content that can expand beyond container */}
             <div
               ref={timelineRef}
               className="relative h-16 bg-card rounded border"
               style={{ width: `${totalDuration * 100 * zoom}px` }}
             >
-              {/* Time markers */}
+              {/* Time markers lines only */}
               <div className="absolute inset-0">
                 {Array.from(
                   { length: Math.ceil(totalDuration) + 1 },
@@ -800,11 +818,7 @@ export function TimelineEditor() {
                       key={i}
                       className="absolute top-0 bottom-0 border-l border-border/50"
                       style={{ left: `${(i / totalDuration) * 100}%` }}
-                    >
-                      <span className="absolute -top-6 text-xs text-muted-foreground">
-                        {i}s
-                      </span>
-                    </div>
+                    />
                   )
                 )}
               </div>
