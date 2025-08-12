@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   Play,
   Pause,
@@ -92,6 +92,9 @@ export function TimelineEditor() {
     zoom,
     setZoom,
   } = useTimelineStore();
+  
+  // Memoize active timeline to prevent unnecessary recalculations
+  const activeTimeline = useMemo(() => getActiveTimeline(), [getActiveTimeline]);
 
   // Removed isAddKeyframeOpen - no longer using Add popover
   const [isEditKeyframeOpen, setIsEditKeyframeOpen] = useState(false);
@@ -119,7 +122,7 @@ export function TimelineEditor() {
   const [didDrag, setDidDrag] = useState(false);
 
   const timelineRef = useRef<HTMLDivElement>(null);
-  const activeTimeline = getActiveTimeline();
+  // activeTimeline is now memoized above
 
   // Handle mouse events for drag and resize
   const handleMouseDown = (
@@ -554,7 +557,16 @@ export function TimelineEditor() {
     );
   }
 
-  const totalDuration = getLastKeyframeEnd();
+  // Memoize expensive calculations
+  const totalDuration = useMemo(() => getLastKeyframeEnd(), [activeTimeline?.keyframes]);
+  
+  const timeMarkers = useMemo(() => {
+    return Array.from({ length: Math.ceil(totalDuration) + 1 }, (_, i) => i);
+  }, [totalDuration]);
+  
+  const timelineWidth = useMemo(() => {
+    return totalDuration * 100 * zoom;
+  }, [totalDuration, zoom]);
 
   return (
     <div className="flex-1 flex flex-col">
@@ -788,9 +800,9 @@ export function TimelineEditor() {
             {/* Time markers container - positioned above timeline, scrolls with content */}
             <div
               className="relative h-6 mb-2"
-              style={{ width: `${totalDuration * 100 * zoom}px` }}
+              style={{ width: `${timelineWidth}px` }}
             >
-              {Array.from({ length: Math.ceil(totalDuration) + 1 }, (_, i) => (
+              {timeMarkers.map((i) => (
                 <div
                   key={i}
                   className="absolute top-0 h-6"
@@ -807,20 +819,17 @@ export function TimelineEditor() {
             <div
               ref={timelineRef}
               className="relative h-16 bg-card rounded border"
-              style={{ width: `${totalDuration * 100 * zoom}px` }}
+              style={{ width: `${timelineWidth}px` }}
             >
               {/* Time markers lines only */}
               <div className="absolute inset-0">
-                {Array.from(
-                  { length: Math.ceil(totalDuration) + 1 },
-                  (_, i) => (
-                    <div
-                      key={i}
-                      className="absolute top-0 bottom-0 border-l border-border/50"
-                      style={{ left: `${(i / totalDuration) * 100}%` }}
-                    />
-                  )
-                )}
+                {timeMarkers.map((i) => (
+                  <div
+                    key={i}
+                    className="absolute top-0 bottom-0 border-l border-border/50"
+                    style={{ left: `${(i / totalDuration) * 100}%` }}
+                  />
+                ))}
               </div>
 
               {/* Current time indicator */}
@@ -840,13 +849,13 @@ export function TimelineEditor() {
                   }`}
                   style={{
                     left: `${(keyframe.delay / totalDuration) * 100}%`,
-                    width: `${
-                      (keyframe.duration / 1000 / totalDuration) * 100
-                    }%`,
+                    width: `${(keyframe.duration / 1000 / totalDuration) * 100}%`,
                     cursor: isDragging
-                      ? dragOperation?.type === "move"
-                        ? "grabbing"
-                        : "ew-resize"
+                      ? dragOperation?.keyframeId === keyframe.id
+                        ? dragOperation?.type === "move"
+                          ? "grabbing"
+                          : "ew-resize"
+                        : "pointer"
                       : "pointer",
                   }}
                 >

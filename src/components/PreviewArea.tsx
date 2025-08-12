@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo, useCallback } from "react";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useTimelineStore, type TargetShape } from "@/stores/timeline-store";
@@ -35,23 +35,14 @@ export function PreviewArea() {
     updateTimeline,
   } = useTimelineStore();
 
-  const handleExportCode = () => {
-    const activeTimeline = getActiveTimeline();
-    if (!activeTimeline) {
-      toast.error("Please select a timeline to export code");
-      return;
+  const handleExportCode = useCallback(() => {
+    const currentTimeline = getActiveTimeline();
+    if (currentTimeline) {
+      const code = generateTimelineCode(currentTimeline);
+      navigator.clipboard.writeText(code);
+      toast.success("Code copied to clipboard!");
     }
-
-    const code = generateTimelineCode(activeTimeline);
-    navigator.clipboard
-      .writeText(code)
-      .then(() => {
-        toast.success("GSAP code copied to clipboard!");
-      })
-      .catch(() => {
-        toast.error("Failed to copy code to clipboard");
-      });
-  };
+  }, [getActiveTimeline]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const targetRef = useRef<HTMLDivElement>(null);
@@ -211,9 +202,22 @@ export function PreviewArea() {
     if (activeTimeline?.targetShape) {
       setTargetShape(activeTimeline.targetShape);
     }
-  }, [activeTimeline, setTargetShape]);
+  }, [activeTimeline?.targetShape, setTargetShape]);
+
+  // Memoize timeline creation to avoid unnecessary recreations
+  const timelineData = useMemo(() => {
+    if (!activeTimeline) return null;
+    return {
+      keyframes: activeTimeline.keyframes,
+      loop: activeTimeline.loop,
+      yoyo: activeTimeline.yoyo,
+      targetShape
+    };
+  }, [activeTimeline?.keyframes, activeTimeline?.loop, activeTimeline?.yoyo, targetShape]);
 
   useEffect(() => {
+    if (!timelineData) return;
+    
     if (timelineRef.current) {
       timelineRef.current.kill();
     }
@@ -224,8 +228,7 @@ export function PreviewArea() {
     if (timelineRef.current && isPlaying) {
       timelineRef.current.play();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTimeline, targetShape]);
+  }, [timelineData, isPlaying]);
 
   useEffect(() => {
     if (timelineRef.current) {
@@ -258,24 +261,12 @@ export function PreviewArea() {
     };
   }, []);
 
-  // Define target shape options for the Select component with preview icons
-  const targetShapeOptions = [
+  // Memoize target shape options to prevent recreation on every render
+  const targetShapeOptions = useMemo(() => [
     {
       value: "square",
       label: "Square",
       icon: <Square className="h-4 w-4" fill="currentColor" />,
-    },
-    {
-      value: "circle",
-      label: "Circle",
-      icon: <div className="h-4 w-4 rounded-full bg-current" />,
-    },
-    {
-      value: "triangle",
-      label: "Triangle",
-      icon: (
-        <div className="h-0 w-0 border-x-4 border-x-transparent border-b-[8px] border-b-current" />
-      ),
     },
     {
       value: "heart",
@@ -285,19 +276,19 @@ export function PreviewArea() {
     {
       value: "bell",
       label: "Bell",
-      icon: <Bell className="h-4 w-4" />,
+      icon: <Bell className="h-4 w-4" fill="currentColor" />,
     },
     {
       value: "menu",
       label: "Menu",
-      icon: <Menu className="h-4 w-4" />,
+      icon: <Menu className="h-4 w-4" fill="currentColor" />,
     },
     {
       value: "audio-lines",
       label: "Audio Lines",
-      icon: <AudioLines className="h-4 w-4" />,
+      icon: <AudioLines className="h-4 w-4" fill="currentColor" />,
     },
-  ];
+  ], []);
 
   return (
     <div className="w-96 p-6">
