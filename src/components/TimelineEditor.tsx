@@ -81,7 +81,8 @@ const CSS_FILTERS = [
 
 export function TimelineEditor() {
   const {
-    getActiveTimeline,
+    timelines,
+    activeTimelineId,
     addKeyframe,
     updateKeyframe,
     deleteKeyframe,
@@ -93,8 +94,10 @@ export function TimelineEditor() {
     setZoom,
   } = useTimelineStore();
   
-  // Memoize active timeline to prevent unnecessary recalculations
-  const activeTimeline = useMemo(() => getActiveTimeline(), [getActiveTimeline]);
+  // Memoize active timeline with stable dependencies
+  const activeTimeline = useMemo(() => {
+    return timelines.find(t => t.id === activeTimelineId) || null;
+  }, [timelines, activeTimelineId]);
 
   // Removed isAddKeyframeOpen - no longer using Add popover
   const [isEditKeyframeOpen, setIsEditKeyframeOpen] = useState(false);
@@ -124,14 +127,41 @@ export function TimelineEditor() {
   const timelineRef = useRef<HTMLDivElement>(null);
   // activeTimeline is now memoized above
 
+  // Memoize expensive calculations early to use in event handlers
+  const getLastKeyframeEndMemo = useCallback(() => {
+    if (!activeTimeline || activeTimeline.keyframes.length === 0) return 0;
+    const lastKeyframe = activeTimeline.keyframes.reduce((latest, current) =>
+      current.delay + current.duration / 1000 >
+      latest.delay + latest.duration / 1000
+        ? current
+        : latest
+    );
+    return lastKeyframe.delay + lastKeyframe.duration / 1000;
+  }, [activeTimeline?.keyframes]);
+
+  const totalDuration = useMemo(() => getLastKeyframeEndMemo(), [getLastKeyframeEndMemo]);
+  
+  const timeMarkers = useMemo(() => {
+    return Array.from({ length: Math.ceil(totalDuration) + 1 }, (_, i) => i);
+  }, [totalDuration]);
+  
+  const timelineWidth = useMemo(() => {
+    return totalDuration * 100 * zoom;
+  }, [totalDuration, zoom]);
+
   // Handle mouse events for drag and resize
-  const handleMouseDown = (
+  const handleMouseDown = useCallback((
     e: React.MouseEvent,
     keyframe: Keyframe,
     type: "move" | "resize"
   ) => {
     e.stopPropagation();
-    if (!timelineRef.current) return;
+    console.log('MouseDown triggered:', { type, keyframeId: keyframe.id, activeTimeline: !!activeTimeline });
+    
+    if (!timelineRef.current || !activeTimeline) {
+      console.log('Missing refs:', { timelineRef: !!timelineRef.current, activeTimeline: !!activeTimeline });
+      return;
+    }
 
     const rect = timelineRef.current.getBoundingClientRect();
     const startX = e.clientX - rect.left;
@@ -144,7 +174,8 @@ export function TimelineEditor() {
       startDuration: keyframe.duration,
     });
     setIsDragging(true);
-  };
+    console.log('Drag operation set:', { type, keyframeId: keyframe.id });
+  }, [activeTimeline]);
 
   // Helper function to snap value to grid with minimum step size
   const snapToGrid = (
@@ -163,14 +194,18 @@ export function TimelineEditor() {
     return isTime ? snapped / 1000 : snapped;
   };
 
-  const handleMouseMove = (e: MouseEvent) => {
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    console.log('MouseMove triggered:', { isDragging, dragOperation: !!dragOperation, timelineRef: !!timelineRef.current, activeTimeline: !!activeTimeline });
+    
     if (
       !isDragging ||
       !dragOperation ||
       !timelineRef.current ||
       !activeTimeline
-    )
+    ) {
+      console.log('MouseMove early return:', { isDragging, dragOperation: !!dragOperation, timelineRef: !!timelineRef.current, activeTimeline: !!activeTimeline });
       return;
+    }
 
     const rect = timelineRef.current.getBoundingClientRect();
     const currentX = e.clientX - rect.left;
@@ -206,14 +241,14 @@ export function TimelineEditor() {
       const newDuration = snapToGrid(rawNewDuration, minStepMs, false);
       updateKeyframe(activeTimeline.id, keyframe.id, { duration: newDuration });
     }
-  };
+  }, [isDragging, dragOperation, activeTimeline, totalDuration, updateKeyframe]);
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     setDragOperation(null);
     setIsDragging(false);
     // Reset didDrag after a short delay to allow the click event to be suppressed
     setTimeout(() => setDidDrag(false), 0);
-  };
+  }, []);
 
   // Add and remove event listeners
   useEffect(() => {
@@ -226,19 +261,9 @@ export function TimelineEditor() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDragging, dragOperation]);
+  }, [isDragging, handleMouseMove, handleMouseUp]);
 
-  const getLastKeyframeEnd = () => {
-    if (!activeTimeline || activeTimeline.keyframes.length === 0) return 0;
-    const lastKeyframe = activeTimeline.keyframes.reduce((latest, current) =>
-      current.delay + current.duration / 1000 >
-      latest.delay + latest.duration / 1000
-        ? current
-        : latest
-    );
-    return lastKeyframe.delay + lastKeyframe.duration / 1000;
-  };
+  // getLastKeyframeEnd is now memoized as getLastKeyframeEndMemo above
 
   const handleAddTransform = (type: TransformType) => {
     const newTransform: Transform = {
@@ -306,7 +331,7 @@ export function TimelineEditor() {
 
   const resetForm = () => {
     setKeyframeForm({
-      delay: getLastKeyframeEnd(),
+      delay: totalDuration,
       duration: 1000,
       easing: "power2.inOut",
       transforms: [],
@@ -349,10 +374,9 @@ export function TimelineEditor() {
     addKeyframe(activeTimeline.id, defaultKeyframe);
 
     // Get the newly created keyframe (it will be the last one)
-    const updatedTimeline = getActiveTimeline();
-    if (updatedTimeline) {
+    if (activeTimeline) {
       const newKeyframe =
-        updatedTimeline.keyframes[updatedTimeline.keyframes.length - 1];
+        activeTimeline.keyframes[activeTimeline.keyframes.length - 1];
 
       // Set up form and open edit dialog
       setEditingKeyframe(newKeyframe);
@@ -557,16 +581,6 @@ export function TimelineEditor() {
     );
   }
 
-  // Memoize expensive calculations
-  const totalDuration = useMemo(() => getLastKeyframeEnd(), [activeTimeline?.keyframes]);
-  
-  const timeMarkers = useMemo(() => {
-    return Array.from({ length: Math.ceil(totalDuration) + 1 }, (_, i) => i);
-  }, [totalDuration]);
-  
-  const timelineWidth = useMemo(() => {
-    return totalDuration * 100 * zoom;
-  }, [totalDuration, zoom]);
 
   return (
     <div className="flex-1 flex flex-col">

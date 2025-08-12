@@ -40,7 +40,7 @@ export function PreviewArea() {
     if (currentTimeline) {
       const code = generateTimelineCode(currentTimeline);
       navigator.clipboard.writeText(code);
-      toast.success("Code copied to clipboard!");
+      toast.success("GSAP Code copied to clipboard!");
     }
   }, [getActiveTimeline]);
 
@@ -211,13 +211,18 @@ export function PreviewArea() {
       keyframes: activeTimeline.keyframes,
       loop: activeTimeline.loop,
       yoyo: activeTimeline.yoyo,
-      targetShape
+      targetShape,
     };
-  }, [activeTimeline?.keyframes, activeTimeline?.loop, activeTimeline?.yoyo, targetShape]);
+  }, [
+    activeTimeline?.keyframes,
+    activeTimeline?.loop,
+    activeTimeline?.yoyo,
+    targetShape,
+  ]);
 
   useEffect(() => {
     if (!timelineData) return;
-    
+
     if (timelineRef.current) {
       timelineRef.current.kill();
     }
@@ -262,38 +267,41 @@ export function PreviewArea() {
   }, []);
 
   // Memoize target shape options to prevent recreation on every render
-  const targetShapeOptions = useMemo(() => [
-    {
-      value: "square",
-      label: "Square",
-      icon: <Square className="h-4 w-4" fill="currentColor" />,
-    },
-    {
-      value: "heart",
-      label: "Heart",
-      icon: <Heart className="h-4 w-4" fill="currentColor" />,
-    },
-    {
-      value: "bell",
-      label: "Bell",
-      icon: <Bell className="h-4 w-4" fill="currentColor" />,
-    },
-    {
-      value: "menu",
-      label: "Menu",
-      icon: <Menu className="h-4 w-4" fill="currentColor" />,
-    },
-    {
-      value: "audio-lines",
-      label: "Audio Lines",
-      icon: <AudioLines className="h-4 w-4" fill="currentColor" />,
-    },
-  ], []);
+  const targetShapeOptions = useMemo(
+    () => [
+      {
+        value: "square",
+        label: "Square",
+        icon: <Square className="h-4 w-4" fill="currentColor" />,
+      },
+      {
+        value: "heart",
+        label: "Heart",
+        icon: <Heart className="h-4 w-4" fill="currentColor" />,
+      },
+      {
+        value: "bell",
+        label: "Bell",
+        icon: <Bell className="h-4 w-4" fill="currentColor" />,
+      },
+      {
+        value: "menu",
+        label: "Menu",
+        icon: <Menu className="h-4 w-4" fill="currentColor" />,
+      },
+      {
+        value: "audio-lines",
+        label: "Audio Lines",
+        icon: <AudioLines className="h-4 w-4" fill="currentColor" />,
+      },
+    ],
+    []
+  );
 
   return (
-    <div className="w-96 p-6">
+    <div className="w-100 p-6">
       {activeTimeline && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Preview</h3>
@@ -382,7 +390,7 @@ export function PreviewArea() {
                 onClick={handleExportCode}
               >
                 <Code className="h-4 w-4" />
-                Export Code
+                Export GSAP Code
               </Button>
             </div>
           )}
