@@ -3,7 +3,12 @@
 import { useState, useEffect } from "react";
 import { roundDelay, roundDuration } from "@/utils/round";
 import { CSS_FILTERS } from "@/constants/filters";
-import { EASING_ORDERS, EASING_TYPES, combineEasing, parseEasing } from "@/constants/easings";
+import {
+  EASING_ORDERS,
+  EASING_TYPES,
+  combineEasing,
+  parseEasing,
+} from "@/constants/easings";
 import { Trash2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -73,7 +78,7 @@ export function KeyframeDialog({
   });
 
   const [isAddTransformOpen, setIsAddTransformOpen] = useState(false);
-  
+
   // Separate easing state for order and type
   const [easingOrder, setEasingOrder] = useState("power2");
   const [easingType, setEasingType] = useState("out");
@@ -445,7 +450,7 @@ export function KeyframeDialog({
 
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <Label>Order:</Label>
+              <Label>Easing:</Label>
               <Select
                 value={easingOrder}
                 onValueChange={(value) => {
@@ -465,10 +470,7 @@ export function KeyframeDialog({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <Label>Type:</Label>
+
               <Select
                 value={easingType}
                 onValueChange={(value) => {
