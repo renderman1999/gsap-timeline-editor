@@ -79,6 +79,7 @@ interface TimelineState {
 
   getActiveTimeline: () => Timeline | null;
   generateUniqueTimelineName: (baseName: string) => string;
+  recreateDemo: () => void;
 }
 
 const createDemoTimeline = (): Timeline => ({
@@ -313,6 +314,14 @@ export const useTimelineStore = create<TimelineState>()(
         }
 
         return `${baseName} ${counter}`;
+      },
+
+      recreateDemo: () => {
+        const demoTimeline = createDemoTimeline();
+        set((state) => ({
+          timelines: [...state.timelines, demoTimeline],
+          activeTimelineId: demoTimeline.id,
+        }));
       },
     }),
     {

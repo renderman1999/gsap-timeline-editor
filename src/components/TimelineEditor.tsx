@@ -33,6 +33,7 @@ export function TimelineEditor() {
     setCurrentTime,
     zoom,
     setZoom,
+    recreateDemo,
   } = useTimelineStore();
 
   // Memoize active timeline with stable dependencies
@@ -259,9 +260,14 @@ export function TimelineEditor() {
 
   if (!activeTimeline) {
     return (
-      <div className="text-center flex-1 flex items-center justify-center text-muted-foreground">
-        There are no timelines to edit. <br />
-        Create a new one or import an existing one to get started.
+      <div className="text-center flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4">
+        <div>
+          There are no timelines to edit. <br />
+          Create a new one or import an existing one to get started.
+        </div>
+        <Button onClick={recreateDemo} variant="outline">
+          Add a Demo Timeline
+        </Button>
       </div>
     );
   }
