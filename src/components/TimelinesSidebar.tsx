@@ -113,7 +113,7 @@ export function TimelinesSidebar() {
               Add New
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="w-[400px]">
             <DialogHeader>
               <DialogTitle>New Timeline</DialogTitle>
             </DialogHeader>

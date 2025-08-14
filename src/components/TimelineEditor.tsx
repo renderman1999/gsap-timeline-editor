@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { KeyframeDialog } from "@/components/KeyframeDialog";
+import { InitialStateDialog } from "@/components/InitialStateDialog";
 
 import {
   Play,
@@ -48,6 +49,9 @@ export function TimelineEditor() {
     easing: "power2.inOut",
     transforms: [] as Transform[],
   });
+
+  const [isInitialStateDialogOpen, setIsInitialStateDialogOpen] =
+    useState(false);
 
   // Drag and resize state
   const [dragOperation, setDragOperation] = useState<{
@@ -377,6 +381,50 @@ export function TimelineEditor() {
               ))}
             </div>
 
+            {/* Initial State */}
+            {activeTimeline.initialState && (
+              <div
+                className="absolute top-2 bottom-2 bg-blue-500/20 rounded hover:bg-blue-500/30 group cursor-pointer border-2 border-blue-500/40"
+                style={{
+                  left: "-90px",
+                  width: "80px",
+                }}
+                onClick={() => setIsInitialStateDialogOpen(true)}
+              >
+                <div className="p-2 h-full flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-blue-700">
+                      Initial State
+                    </span>
+                  </div>
+                  <div className="flex items-center mt-1">
+                    <span className="text-xxs text-blue-600 font-medium bg-blue-500/10 px-1 rounded">
+                      {activeTimeline.initialState.length} transforms
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Add Initial State Button */}
+            {!activeTimeline.initialState && (
+              <div
+                className="absolute top-2 bottom-2 bg-transparent rounded hover:bg-primary/5 group cursor-pointer border-2 border-dashed border-primary/60"
+                style={{
+                  left: "-90px",
+                  width: "80px",
+                }}
+                onClick={() => setIsInitialStateDialogOpen(true)}
+              >
+                <div className="p-2 h-full flex flex-col justify-center items-center">
+                  <Plus className="h-4 w-4 text-primary mb-1" />
+                  <span className="text-xs text-primary font-medium text-center">
+                    Initial State
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Timeline content that can expand beyond container */}
             <div
               ref={timelineRef}
@@ -494,6 +542,26 @@ export function TimelineEditor() {
           </div>
         </div>
       </div>
+
+      {/* KeyframeDialog */}
+      <KeyframeDialog
+        isOpen={isKeyframeDialogOpen}
+        onOpenChange={setIsKeyframeDialogOpen}
+        mode={dialogMode}
+        keyframe={editingKeyframe}
+        initialData={initialKeyframeData}
+        onSave={handleSaveKeyframe}
+        onCancel={handleDialogCancel}
+      />
+
+      {/* InitialStateDialog */}
+      {activeTimeline && (
+        <InitialStateDialog
+          isOpen={isInitialStateDialogOpen}
+          onOpenChange={setIsInitialStateDialogOpen}
+          timelineId={activeTimeline.id}
+        />
+      )}
     </div>
   );
 }

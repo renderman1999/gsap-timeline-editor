@@ -27,6 +27,7 @@ export interface Timeline {
   yoyo: boolean;
   keyframes: Keyframe[];
   targetShape?: TargetShape;
+  initialState?: Transform[];
 }
 
 export type TargetShape =
@@ -57,6 +58,9 @@ interface TimelineState {
   addKeyframe: (timelineId: string, keyframe: Omit<Keyframe, 'id'>) => void;
   updateKeyframe: (timelineId: string, keyframeId: string, updates: Partial<Keyframe>) => void;
   deleteKeyframe: (timelineId: string, keyframeId: string) => void;
+  
+  setInitialState: (timelineId: string, initialState: Transform[]) => void;
+  clearInitialState: (timelineId: string) => void;
   
   setTargetShape: (shape: TargetShape) => void;
   setPlaying: (playing: boolean) => void;
@@ -224,6 +228,26 @@ export const useTimelineStore = create<TimelineState>()(
                   ...timeline,
                   keyframes: timeline.keyframes.filter(k => k.id !== keyframeId)
                 }
+              : timeline
+          )
+        }));
+      },
+
+      setInitialState: (timelineId, initialState) => {
+        set((state) => ({
+          timelines: state.timelines.map(timeline =>
+            timeline.id === timelineId
+              ? { ...timeline, initialState }
+              : timeline
+          )
+        }));
+      },
+
+      clearInitialState: (timelineId) => {
+        set((state) => ({
+          timelines: state.timelines.map(timeline =>
+            timeline.id === timelineId
+              ? { ...timeline, initialState: undefined }
               : timeline
           )
         }));

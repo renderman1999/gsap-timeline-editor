@@ -104,8 +104,8 @@ export function PreviewArea() {
       },
     });
 
-    // Reset target to initial state
-    gsap.set(targetRef.current, {
+    // Reset target to initial state or use Initial State transforms
+    const initialProps: Record<string, number | string> = {
       x: 0,
       y: 0,
       rotation: 0,
@@ -115,7 +115,72 @@ export function PreviewArea() {
       scaleX: 1,
       scaleY: 1,
       filter: "none",
-    });
+    };
+
+    // Apply Initial State transforms if they exist
+    if (activeTimeline.initialState) {
+      activeTimeline.initialState.forEach((transform) => {
+        switch (transform.type) {
+          case "move":
+            initialProps.x = transform.values.x || 0;
+            initialProps.y = transform.values.y || 0;
+            break;
+          case "rotate":
+            initialProps.rotation = transform.values.rotation || 0;
+            break;
+          case "opacity":
+            initialProps.opacity = transform.values.opacity || 1;
+            break;
+          case "skew":
+            initialProps.skewX = transform.values.skewX || 0;
+            initialProps.skewY = transform.values.skewY || 0;
+            break;
+          case "scale":
+            initialProps.scaleX = transform.values.scaleX || 1;
+            initialProps.scaleY = transform.values.scaleY || 1;
+            break;
+          case "filter":
+            const filterType = transform.values.filter;
+            const filterValue = transform.values.value;
+            let filterString = "";
+
+            switch (filterType) {
+              case "blur":
+                filterString = `blur(${filterValue}px)`;
+                break;
+              case "brightness":
+                filterString = `brightness(${filterValue}%)`;
+                break;
+              case "contrast":
+                filterString = `contrast(${filterValue}%)`;
+                break;
+              case "grayscale":
+                filterString = `grayscale(${filterValue}%)`;
+                break;
+              case "hue-rotate":
+                filterString = `hue-rotate(${filterValue}deg)`;
+                break;
+              case "invert":
+                filterString = `invert(${filterValue}%)`;
+                break;
+              case "opacity":
+                filterString = `opacity(${filterValue}%)`;
+                break;
+              case "saturate":
+                filterString = `saturate(${filterValue}%)`;
+                break;
+              case "sepia":
+                filterString = `sepia(${filterValue}%)`;
+                break;
+            }
+
+            initialProps.filter = filterString;
+            break;
+        }
+      });
+    }
+
+    gsap.set(targetRef.current, initialProps);
 
     // Add keyframes to timeline
     activeTimeline.keyframes
@@ -212,11 +277,13 @@ export function PreviewArea() {
       loop: activeTimeline.loop,
       yoyo: activeTimeline.yoyo,
       targetShape,
+      initialState: activeTimeline.initialState,
     };
   }, [
     activeTimeline?.keyframes,
     activeTimeline?.loop,
     activeTimeline?.yoyo,
+    activeTimeline?.initialState,
     targetShape,
   ]);
 
