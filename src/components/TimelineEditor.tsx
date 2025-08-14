@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { roundDelay, roundDuration } from "@/utils/round";
-import { CSS_FILTERS } from "@/constants/filters";
-import { GSAP_EASINGS } from "@/constants/easings";
+import { KeyframeDialog } from "@/components/KeyframeDialog";
 
 import {
   Play,
@@ -15,28 +13,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import {
   useTimelineStore,
   type Keyframe,
   type Transform,
-  type TransformType,
 } from "@/stores/timeline-store";
 
 export function TimelineEditor() {
@@ -59,10 +39,10 @@ export function TimelineEditor() {
     return timelines.find((t) => t.id === activeTimelineId) || null;
   }, [timelines, activeTimelineId]);
 
-  const [isAddKeyframeOpen, setIsAddKeyframeOpen] = useState(false);
-  const [isEditKeyframeOpen, setIsEditKeyframeOpen] = useState(false);
+  const [isKeyframeDialogOpen, setIsKeyframeDialogOpen] = useState(false);
   const [editingKeyframe, setEditingKeyframe] = useState<Keyframe | null>(null);
-  const [keyframeForm, setKeyframeForm] = useState({
+  const [dialogMode, setDialogMode] = useState<"add" | "edit">("add");
+  const [initialKeyframeData, setInitialKeyframeData] = useState({
     delay: 0,
     duration: 1000,
     easing: "power2.inOut",
@@ -220,94 +200,28 @@ export function TimelineEditor() {
 
   // getLastKeyframeEnd is now memoized as getLastKeyframeEndMemo above
 
-  const handleAddTransform = (type: TransformType) => {
-    const newTransform: Transform = {
-      id: Math.random().toString(36).substr(2, 9),
-      type,
-      values: getDefaultTransformValues(type),
-    };
-
-    setKeyframeForm((prev) => ({
-      ...prev,
-      transforms: [...prev.transforms, newTransform],
-    }));
-  };
-
-  const getDefaultTransformValues = (
-    type: TransformType
-  ): Record<string, number | string> => {
-    switch (type) {
-      case "move":
-        return { x: 0, y: 0 };
-      case "rotate":
-        return { rotation: 0 };
-      case "opacity":
-        return { opacity: 1 };
-      case "skew":
-        return { skewX: 0, skewY: 0 };
-      case "scale":
-        return { scaleX: 1, scaleY: 1 };
-      case "filter":
-        return { filter: "blur", value: 0 };
-      default:
-        return {};
-    }
-  };
-
-  const updateTransform = (
-    transformId: string,
-    values: Record<string, number | string>
-  ) => {
-    setKeyframeForm((prev) => ({
-      ...prev,
-      transforms: prev.transforms.map((t) =>
-        t.id === transformId ? { ...t, values } : t
-      ),
-    }));
-  };
-
-  const removeTransform = (transformId: string) => {
-    setKeyframeForm((prev) => ({
-      ...prev,
-      transforms: prev.transforms.filter((t) => t.id !== transformId),
-    }));
-  };
-
-  const handleSaveKeyframe = () => {
+  const handleSaveKeyframe = (keyframeData: {
+    delay: number;
+    duration: number;
+    easing: string;
+    transforms: Transform[];
+  }) => {
     if (!activeTimeline) return;
 
     if (editingKeyframe) {
-      // Update existing keyframe
-      updateKeyframe(activeTimeline.id, editingKeyframe.id, keyframeForm);
-      setIsEditKeyframeOpen(false);
+      updateKeyframe(activeTimeline.id, editingKeyframe.id, keyframeData);
     } else {
-      // Add new keyframe
-      addKeyframe(activeTimeline.id, keyframeForm);
-      setIsAddKeyframeOpen(false);
+      addKeyframe(activeTimeline.id, keyframeData);
     }
 
     setEditingKeyframe(null);
-    resetForm();
-  };
-
-  const resetForm = () => {
-    setKeyframeForm({
-      delay: totalDuration,
-      duration: 1000,
-      easing: "power2.inOut",
-      transforms: [],
-    });
+    setIsKeyframeDialogOpen(false);
   };
 
   const handleEditKeyframe = (keyframe: Keyframe) => {
     setEditingKeyframe(keyframe);
-    setKeyframeForm({
-      delay: keyframe.delay,
-      duration: keyframe.duration,
-      easing: keyframe.easing,
-      transforms: keyframe.transforms,
-    });
-    setIsEditKeyframeOpen(true);
+    setDialogMode("edit");
+    setIsKeyframeDialogOpen(true);
   };
 
   const handleAddKeyframe = () => {
@@ -321,199 +235,26 @@ export function TimelineEditor() {
           )
         : 0;
 
-    // Create default keyframe positioned after the last one
-    const defaultKeyframe = {
+    // Set initial data for new keyframe
+    setInitialKeyframeData({
       delay: lastKeyframeEnd,
       duration: 1000,
       easing: "power2.inOut",
       transforms: [],
-    };
-
-    // Set up form for new keyframe and open add dialog
-    setKeyframeForm({
-      delay: defaultKeyframe.delay,
-      duration: defaultKeyframe.duration,
-      easing: defaultKeyframe.easing,
-      transforms: defaultKeyframe.transforms,
     });
-    setEditingKeyframe(null); // Clear editing keyframe for add mode
-    setIsAddKeyframeOpen(true);
+
+    setEditingKeyframe(null);
+    setDialogMode("add");
+    setIsKeyframeDialogOpen(true);
+  };
+
+  const handleDialogCancel = () => {
+    setEditingKeyframe(null);
+    setIsKeyframeDialogOpen(false);
   };
 
   const renderTransformFields = (transform: Transform) => {
-    switch (transform.type) {
-      case "move":
-        return (
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label>X</Label>
-              <Input
-                type="number"
-                value={transform.values.x as number}
-                onChange={(e) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    x: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
-            </div>
-            <div>
-              <Label>Y</Label>
-              <Input
-                type="number"
-                value={transform.values.y as number}
-                onChange={(e) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    y: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
-            </div>
-          </div>
-        );
-      case "scale":
-        return (
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label>Scale X</Label>
-              <Input
-                type="number"
-                step="0.1"
-                value={transform.values.scaleX as number}
-                onChange={(e) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    scaleX: parseFloat(e.target.value) || 1,
-                  })
-                }
-              />
-            </div>
-            <div>
-              <Label>Scale Y</Label>
-              <Input
-                type="number"
-                step="0.1"
-                value={transform.values.scaleY as number}
-                onChange={(e) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    scaleY: parseFloat(e.target.value) || 1,
-                  })
-                }
-              />
-            </div>
-          </div>
-        );
-      case "rotate":
-        return (
-          <div>
-            <Label>Rotation (degrees)</Label>
-            <Input
-              type="number"
-              value={transform.values.rotation as number}
-              onChange={(e) =>
-                updateTransform(transform.id, {
-                  rotation: parseFloat(e.target.value) || 0,
-                })
-              }
-            />
-          </div>
-        );
-      case "opacity":
-        return (
-          <div>
-            <Label>Opacity (0-1)</Label>
-            <Input
-              type="number"
-              step="0.1"
-              min="0"
-              max="1"
-              value={transform.values.opacity as number}
-              onChange={(e) =>
-                updateTransform(transform.id, {
-                  opacity: parseFloat(e.target.value) || 0,
-                })
-              }
-            />
-          </div>
-        );
-      case "skew":
-        return (
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label>Skew X</Label>
-              <Input
-                type="number"
-                value={transform.values.skewX as number}
-                onChange={(e) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    skewX: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
-            </div>
-            <div>
-              <Label>Skew Y</Label>
-              <Input
-                type="number"
-                value={transform.values.skewY as number}
-                onChange={(e) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    skewY: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
-            </div>
-          </div>
-        );
-      case "filter":
-        return (
-          <div className="space-y-2">
-            <div>
-              <Label>Filter Type</Label>
-              <Select
-                value={transform.values.filter as string}
-                onValueChange={(value) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    filter: value,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CSS_FILTERS.map((filter) => (
-                    <SelectItem key={filter} value={filter}>
-                      {filter}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Value</Label>
-              <Input
-                type="number"
-                value={transform.values.value as number}
-                onChange={(e) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    value: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
-            </div>
-          </div>
-        );
-      default:
-        return null;
-    }
+    return null;
   };
 
   if (!activeTimeline) {
@@ -594,256 +335,23 @@ export function TimelineEditor() {
         </div>
       </div>
 
-      {/* Add Keyframe Dialog */}
-      <Dialog open={isAddKeyframeOpen} onOpenChange={setIsAddKeyframeOpen}>
-        <DialogContent className="max-w-md max-h-[80vh]">
-          <DialogHeader>
-            <DialogTitle>Add Keyframe</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 max-h-[60vh] overflow-y-auto">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Delay (s)</Label>
-                <Input
-                  type="number"
-                  step="0.001"
-                  min="0"
-                  value={keyframeForm.delay}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value) || 0;
-                    setKeyframeForm((prev) => ({
-                      ...prev,
-                      delay: roundDelay(value),
-                    }));
-                  }}
-                />
-              </div>
-              <div>
-                <Label>Duration (ms)</Label>
-                <Input
-                  type="number"
-                  step="1"
-                  min="1"
-                  value={keyframeForm.duration}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value) || 1000;
-                    setKeyframeForm((prev) => ({
-                      ...prev,
-                      duration: roundDuration(value),
-                    }));
-                  }}
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label>Easing</Label>
-              <Select
-                value={keyframeForm.easing}
-                onValueChange={(value) =>
-                  setKeyframeForm((prev) => ({ ...prev, easing: value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {GSAP_EASINGS.map((easing) => (
-                    <SelectItem key={easing} value={easing}>
-                      {easing}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label>Transforms</Label>
-                <Select
-                  onValueChange={(value: TransformType) =>
-                    handleAddTransform(value)
-                  }
-                >
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="Add Transform" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="move">Move</SelectItem>
-                    <SelectItem value="scale">Scale</SelectItem>
-                    <SelectItem value="rotate">Rotate</SelectItem>
-                    <SelectItem value="opacity">Opacity</SelectItem>
-                    <SelectItem value="skew">Skew</SelectItem>
-                    <SelectItem value="filter">Filter</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-3">
-                {keyframeForm.transforms.map((transform) => (
-                  <Card key={transform.id} className="p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium capitalize">
-                        {transform.type}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => removeTransform(transform.id)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    {renderTransformFields(transform)}
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsAddKeyframeOpen(false);
-                setEditingKeyframe(null);
-                resetForm();
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleSaveKeyframe}>Add Keyframe</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Keyframe Dialog */}
-      <Dialog open={isEditKeyframeOpen} onOpenChange={setIsEditKeyframeOpen}>
-        <DialogContent className="max-w-md max-h-[80vh]">
-          <DialogHeader>
-            <DialogTitle>
-              Edit Keyframe{" "}
-              {editingKeyframe && activeTimeline
-                ? activeTimeline.keyframes.findIndex(
-                    (k) => k.id === editingKeyframe.id
-                  ) + 1
-                : ""}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 max-h-[60vh] overflow-y-auto">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Delay (s)</Label>
-                <Input
-                  type="number"
-                  step="0.001"
-                  min="0"
-                  value={keyframeForm.delay}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value) || 0;
-                    setKeyframeForm((prev) => ({
-                      ...prev,
-                      delay: roundDelay(value),
-                    }));
-                  }}
-                />
-              </div>
-              <div>
-                <Label>Duration (ms)</Label>
-                <Input
-                  type="number"
-                  step="1"
-                  min="1"
-                  value={keyframeForm.duration}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value) || 1000;
-                    setKeyframeForm((prev) => ({
-                      ...prev,
-                      duration: roundDuration(value),
-                    }));
-                  }}
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label>Easing</Label>
-              <Select
-                value={keyframeForm.easing}
-                onValueChange={(value) =>
-                  setKeyframeForm((prev) => ({ ...prev, easing: value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {GSAP_EASINGS.map((easing) => (
-                    <SelectItem key={easing} value={easing}>
-                      {easing}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label>Transforms</Label>
-                <Select
-                  onValueChange={(value: TransformType) =>
-                    handleAddTransform(value)
-                  }
-                >
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="Add Transform" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="move">Move</SelectItem>
-                    <SelectItem value="scale">Scale</SelectItem>
-                    <SelectItem value="rotate">Rotate</SelectItem>
-                    <SelectItem value="opacity">Opacity</SelectItem>
-                    <SelectItem value="skew">Skew</SelectItem>
-                    <SelectItem value="filter">Filter</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-3">
-                {keyframeForm.transforms.map((transform) => (
-                  <Card key={transform.id} className="p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium capitalize">
-                        {transform.type}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => removeTransform(transform.id)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    {renderTransformFields(transform)}
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsEditKeyframeOpen(false);
-                setEditingKeyframe(null);
-                resetForm();
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleSaveKeyframe}>Update Keyframe</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Unified Keyframe Dialog */}
+      <KeyframeDialog
+        isOpen={isKeyframeDialogOpen}
+        onOpenChange={setIsKeyframeDialogOpen}
+        mode={dialogMode}
+        keyframe={editingKeyframe}
+        keyframeNumber={
+          editingKeyframe && activeTimeline
+            ? activeTimeline.keyframes.findIndex(
+                (k) => k.id === editingKeyframe.id
+              ) + 1
+            : undefined
+        }
+        initialData={dialogMode === "add" ? initialKeyframeData : undefined}
+        onSave={handleSaveKeyframe}
+        onCancel={handleDialogCancel}
+      />
 
       {/* Timeline */}
       <div className="flex-1 p-4">
