@@ -299,11 +299,11 @@ export function PreviewArea() {
   );
 
   return (
-    <div className="w-100 p-6">
+    <div className="max-w-[700px] mx-auto w-full">
       {activeTimeline && (
         <div className="space-y-4">
-          <div>
-            <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between my-4">
+            <div className="flex items-center justify-between gap-4">
               <h3 className="text-lg font-semibold">Preview</h3>
               <Select
                 value={activeTimeline.targetShape}
@@ -335,16 +335,6 @@ export function PreviewArea() {
                 </SelectContent>
               </Select>
             </div>
-          </div>
-
-          <div
-            ref={containerRef}
-            className="bg-black rounded-lg p-8 min-h-64 flex items-center justify-center relative overflow-hidden"
-          >
-            <div ref={targetRef}>{renderShape()}</div>
-          </div>
-
-          {activeTimeline && (
             <div className="flex items-center justify-center gap-2">
               <div className="flex items-center gap-2 mr-2">
                 <Switch
@@ -393,7 +383,14 @@ export function PreviewArea() {
                 Export GSAP Code
               </Button>
             </div>
-          )}
+          </div>
+
+          <div
+            ref={containerRef}
+            className="bg-black rounded-lg p-8 min-h-64 flex items-center justify-center relative overflow-hidden"
+          >
+            <div ref={targetRef}>{renderShape()}</div>
+          </div>
         </div>
       )}
     </div>
