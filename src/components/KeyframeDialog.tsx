@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { roundDelay, roundDuration } from "@/utils/round";
 import { CSS_FILTERS } from "@/constants/filters";
-import { GSAP_EASINGS } from "@/constants/easings";
+import { EASING_ORDERS, EASING_TYPES, combineEasing, parseEasing } from "@/constants/easings";
 import { Trash2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -68,29 +68,39 @@ export function KeyframeDialog({
   const [keyframeForm, setKeyframeForm] = useState({
     delay: 0,
     duration: 1000,
-    easing: "power2.inOut",
+    easing: "power2.out",
     transforms: [] as Transform[],
   });
 
   const [isAddTransformOpen, setIsAddTransformOpen] = useState(false);
+  
+  // Separate easing state for order and type
+  const [easingOrder, setEasingOrder] = useState("power2");
+  const [easingType, setEasingType] = useState("out");
 
   // Initialize form when dialog opens or keyframe changes
   useEffect(() => {
     if (isOpen) {
       if (mode === "edit" && keyframe) {
+        const { order, type } = parseEasing(keyframe.easing);
         setKeyframeForm({
           delay: keyframe.delay,
           duration: keyframe.duration,
           easing: keyframe.easing,
-          transforms: keyframe.transforms,
+          transforms: [...keyframe.transforms],
         });
+        setEasingOrder(order);
+        setEasingType(type);
       } else if (mode === "add" && initialData) {
+        const { order, type } = parseEasing(initialData.easing);
         setKeyframeForm({
           delay: initialData.delay,
           duration: initialData.duration,
           easing: initialData.easing,
-          transforms: initialData.transforms,
+          transforms: [...initialData.transforms],
         });
+        setEasingOrder(order);
+        setEasingType(type);
       }
     }
   }, [isOpen, mode, keyframe, initialData]);
@@ -433,25 +443,53 @@ export function KeyframeDialog({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Label>Easing:</Label>
-            <Select
-              value={keyframeForm.easing}
-              onValueChange={(value) =>
-                setKeyframeForm((prev) => ({ ...prev, easing: value }))
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="overflow-y-auto max-h-[20rem]">
-                {GSAP_EASINGS.map((easing) => (
-                  <SelectItem key={easing} value={easing}>
-                    {easing}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Label>Order:</Label>
+              <Select
+                value={easingOrder}
+                onValueChange={(value) => {
+                  setEasingOrder(value);
+                  const newEasing = combineEasing(value, easingType);
+                  setKeyframeForm((prev) => ({ ...prev, easing: newEasing }));
+                }}
+              >
+                <SelectTrigger className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EASING_ORDERS.map((order) => (
+                    <SelectItem key={order.value} value={order.value}>
+                      {order.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Label>Type:</Label>
+              <Select
+                value={easingType}
+                onValueChange={(value) => {
+                  setEasingType(value);
+                  const newEasing = combineEasing(easingOrder, value);
+                  setKeyframeForm((prev) => ({ ...prev, easing: newEasing }));
+                }}
+                disabled={easingOrder === "none"}
+              >
+                <SelectTrigger className="w-20">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EASING_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <Card className="px-4 py-2 ">
