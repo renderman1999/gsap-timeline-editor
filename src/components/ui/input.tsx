@@ -1,17 +1,13 @@
-import * as React from "react"
+import * as React from "react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
-interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> {
+interface InputProps
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "size"> {
   size?: "sm" | "default";
 }
 
-function Input({ 
-  className, 
-  type, 
-  size = "sm", 
-  ...props 
-}: InputProps) {
+function Input({ className, type, size = "sm", ...props }: InputProps) {
   return (
     <input
       type={type}
@@ -22,12 +18,12 @@ function Input({
         "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
         "aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
         size === "default" && "h-9 py-1",
-        size === "sm" && "h-7 py-0.5 text-xs",
+        size === "sm" && "h-7 py-0.5 text-xs px-1",
         className
       )}
       {...props}
     />
-  )
+  );
 }
 
-export { Input }
+export { Input };

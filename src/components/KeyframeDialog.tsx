@@ -98,6 +98,14 @@ export function KeyframeDialog({
   };
 
   const handleAddTransform = (type: TransformType) => {
+    // Check if transform type already exists
+    const existingTransform = keyframeForm.transforms.find(
+      (t) => t.type === type
+    );
+    if (existingTransform) {
+      return; // Don't add duplicate transform types
+    }
+
     const id = Math.random().toString(36).substr(2, 9);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let defaultValues: any = {};
@@ -166,12 +174,13 @@ export function KeyframeDialog({
     switch (transform.type) {
       case "move":
         return (
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label>X</Label>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1">
+              <Label>X:</Label>
               <Input
                 type="number"
                 value={transform.values.x as number}
+                className="max-w-[4rem]"
                 onChange={(e) =>
                   updateTransform(transform.id, {
                     ...transform.values,
@@ -179,12 +188,14 @@ export function KeyframeDialog({
                   })
                 }
               />
+              <span className="text-xs text-muted-foreground">px</span>
             </div>
-            <div>
-              <Label>Y</Label>
+            <div className="flex items-center gap-1">
+              <Label>Y:</Label>
               <Input
                 type="number"
                 value={transform.values.y as number}
+                className="max-w-[4rem]"
                 onChange={(e) =>
                   updateTransform(transform.id, {
                     ...transform.values,
@@ -192,13 +203,14 @@ export function KeyframeDialog({
                   })
                 }
               />
+              <span className="text-xs text-muted-foreground">px</span>
             </div>
           </div>
         );
       case "scale":
         return (
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-8">
+            <div className="flex items-center gap-1">
               <Label>X:</Label>
               <Input
                 type="number"
@@ -234,11 +246,12 @@ export function KeyframeDialog({
         );
       case "rotate":
         return (
-          <div>
-            <Label>Rotation (degrees)</Label>
+          <div className="flex items-center gap-2 ml-3">
             <Input
               type="number"
               value={transform.values.rotation as number}
+              min="-360"
+              max="360"
               onChange={(e) =>
                 updateTransform(transform.id, {
                   ...transform.values,
@@ -246,34 +259,37 @@ export function KeyframeDialog({
                 })
               }
             />
+            <span className="text-xs text-muted-foreground">deg</span>
           </div>
         );
       case "opacity":
         return (
-          <div>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              max="1"
-              className="max-w-[4rem]"
-              value={transform.values.opacity as number}
-              onChange={(e) =>
-                updateTransform(transform.id, {
-                  ...transform.values,
-                  opacity: parseFloat(e.target.value) || 0,
-                })
-              }
-            />
-          </div>
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
+            max="1"
+            className="max-w-[3rem] ml-1"
+            value={transform.values.opacity as number}
+            onChange={(e) =>
+              updateTransform(transform.id, {
+                ...transform.values,
+                opacity: parseFloat(e.target.value) || 0,
+              })
+            }
+          />
         );
       case "skew":
         return (
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <Label>X:</Label>
               <Input
                 type="number"
+                step="0.01"
+                min="-180"
+                max="180"
+                className="max-w-[4rem]"
                 value={transform.values.skewX as number}
                 onChange={(e) =>
                   updateTransform(transform.id, {
@@ -282,11 +298,16 @@ export function KeyframeDialog({
                   })
                 }
               />
+              <span className="text-xs text-muted-foreground">deg</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <Label>Y:</Label>
               <Input
                 type="number"
+                step="0.01"
+                min="-180"
+                max="180"
+                className="max-w-[4rem]"
                 value={transform.values.skewY as number}
                 onChange={(e) =>
                   updateTransform(transform.id, {
@@ -295,14 +316,15 @@ export function KeyframeDialog({
                   })
                 }
               />
+              <span className="text-xs text-muted-foreground">deg</span>
             </div>
           </div>
         );
       case "filter":
         return (
-          <div className="space-y-2">
-            <div>
-              <Label>Filter Type</Label>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1">
+              <Label className="text-xs text-muted-foreground"> Type</Label>
               <Select
                 value={transform.values.filter as string}
                 onValueChange={(value) =>
@@ -324,11 +346,12 @@ export function KeyframeDialog({
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>Value</Label>
+            <div className="flex items-center gap-1">
+              <Label className="text-xs text-muted-foreground">Value</Label>
               <Input
                 type="number"
                 value={transform.values.value as number}
+                className="max-w-[4rem]"
                 onChange={(e) =>
                   updateTransform(transform.id, {
                     ...transform.values,
@@ -351,7 +374,7 @@ export function KeyframeDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[450px] max-h-[80vh]">
+      <DialogContent className="max-w-[420px] max-h-[80vh]">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
@@ -426,19 +449,39 @@ export function KeyframeDialog({
                   <SelectValue placeholder="Add Transform" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="move">Move</SelectItem>
-                  <SelectItem value="scale">Scale</SelectItem>
-                  <SelectItem value="rotate">Rotate</SelectItem>
-                  <SelectItem value="opacity">Opacity</SelectItem>
-                  <SelectItem value="skew">Skew</SelectItem>
-                  <SelectItem value="filter">Filter</SelectItem>
+                  {[
+                    { value: "move", label: "Move" },
+                    { value: "scale", label: "Scale" },
+                    { value: "rotate", label: "Rotate" },
+                    { value: "opacity", label: "Opacity" },
+                    { value: "skew", label: "Skew" },
+                    { value: "filter", label: "Filter" },
+                  ].map(({ value, label }) => {
+                    const isUsed = keyframeForm.transforms.some(
+                      (t) => t.type === value
+                    );
+                    return (
+                      <SelectItem
+                        key={value}
+                        value={value}
+                        disabled={isUsed}
+                        className={isUsed ? "opacity-50" : ""}
+                      >
+                        {label} {isUsed ? "(added)" : ""}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-4 overflow-y-auto max-h-[20rem]">
+              {keyframeForm.transforms.length === 0 && (
+                <p className="text-center text-xs mt-4 mb-6 text-muted-foreground">
+                  No transforms added yet. Add one to animate.
+                </p>
+              )}
               {keyframeForm.transforms.map((transform) => (
-                // <Card key={transform.id} className="p-3">
                 <div
                   key={transform.id}
                   className="flex items-center justify-start gap-2 mb-2"
@@ -457,7 +500,6 @@ export function KeyframeDialog({
                     <Trash2 className="h-3 w-3 text-red-500" />
                   </Button>
                 </div>
-                // </Card>
               ))}
             </div>
           </Card>
