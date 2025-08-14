@@ -427,8 +427,7 @@ export function PreviewArea() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="flex items-center justify-center gap-2">
+
               <div className="flex items-center gap-2 mr-2">
                 <Switch
                   id="loop-toggle"
@@ -440,7 +439,7 @@ export function PreviewArea() {
                   }
                   className="scale-75"
                 />
-                <Label htmlFor="loop-toggle" className="text-xs cursor-pointer">
+                <Label htmlFor="loop-toggle" className="text-sm cursor-pointer">
                   Loop
                 </Label>
               </div>
@@ -459,13 +458,14 @@ export function PreviewArea() {
                   />
                   <Label
                     htmlFor="yoyo-toggle"
-                    className="text-xs cursor-pointer"
+                    className="text-sm cursor-pointer"
                   >
                     Boomerang
                   </Label>
                 </div>
               )}
-
+            </div>
+            <div className="flex items-center justify-center gap-2">
               <Button
                 size="sm"
                 variant="outline"
