@@ -200,12 +200,6 @@ export function TimelineEditor() {
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
-        isDragging,
-        dragOperation: !!dragOperation,
-        timelineRef: !!timelineRef.current,
-        activeTimeline: !!activeTimeline,
-      });
-
       if (
         !isDragging ||
         !dragOperation ||
@@ -375,9 +369,12 @@ export function TimelineEditor() {
     if (!activeTimeline) return;
 
     // Calculate delay to place new keyframe after the last existing keyframe
-    const lastKeyframeEnd = activeTimeline.keyframes.length > 0 
-      ? Math.max(...activeTimeline.keyframes.map(k => k.delay + k.duration / 1000))
-      : 0;
+    const lastKeyframeEnd =
+      activeTimeline.keyframes.length > 0
+        ? Math.max(
+            ...activeTimeline.keyframes.map((k) => k.delay + k.duration / 1000)
+          )
+        : 0;
 
     // Create default keyframe positioned after the last one
     const defaultKeyframe = {
