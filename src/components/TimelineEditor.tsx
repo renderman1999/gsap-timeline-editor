@@ -257,15 +257,11 @@ export function TimelineEditor() {
     setIsKeyframeDialogOpen(false);
   };
 
-  const renderTransformFields = (transform: Transform) => {
-    return null;
-  };
-
   if (!activeTimeline) {
     return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground">
-        There are no timelines to edit. Please create a new timeline through the
-        left sidebar.
+      <div className="text-center flex-1 flex items-center justify-center text-muted-foreground">
+        There are no timelines to edit. <br />
+        Create a new one or import an existing one to get started.
       </div>
     );
   }

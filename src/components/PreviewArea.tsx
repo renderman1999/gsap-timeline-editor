@@ -460,7 +460,7 @@ export function PreviewArea() {
                     htmlFor="yoyo-toggle"
                     className="text-sm cursor-pointer"
                   >
-                    Boomerang
+                    Yo-yo
                   </Label>
                 </div>
               )}
