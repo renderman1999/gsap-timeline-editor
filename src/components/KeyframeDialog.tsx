@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { roundDelay, roundDuration } from "@/utils/round";
 import { CSS_FILTERS } from "@/constants/filters";
 import { GSAP_EASINGS } from "@/constants/easings";
-import { Trash2 } from "lucide-react";
+import { Trash2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -67,6 +72,8 @@ export function KeyframeDialog({
     transforms: [] as Transform[],
   });
 
+  const [isAddTransformOpen, setIsAddTransformOpen] = useState(false);
+
   // Initialize form when dialog opens or keyframe changes
   useEffect(() => {
     if (isOpen) {
@@ -100,7 +107,7 @@ export function KeyframeDialog({
   // Helper function to normalize decimal input (handles both dot and comma)
   const parseDecimalInput = (value: string): number => {
     // Replace comma with dot for consistent parsing
-    const normalizedValue = value.replace(',', '.');
+    const normalizedValue = value.replace(",", ".");
     return parseFloat(normalizedValue) || 0;
   };
 
@@ -148,6 +155,9 @@ export function KeyframeDialog({
       ...prev,
       transforms: [...prev.transforms, newTransform],
     }));
+
+    // Close the popover after adding transform
+    setIsAddTransformOpen(false);
   };
 
   const removeTransform = (transformId: string) => {
@@ -447,39 +457,49 @@ export function KeyframeDialog({
           <Card className="px-4 py-2 ">
             <div className="flex items-center justify-between mb-2">
               <Label className="text-md font-bold">Transforms</Label>
-              <Select
-                onValueChange={(value: TransformType) =>
-                  handleAddTransform(value)
-                }
+              <Popover
+                open={isAddTransformOpen}
+                onOpenChange={setIsAddTransformOpen}
               >
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Add Transform" />
-                </SelectTrigger>
-                <SelectContent>
-                  {[
-                    { value: "move", label: "Move" },
-                    { value: "scale", label: "Scale" },
-                    { value: "rotate", label: "Rotate" },
-                    { value: "opacity", label: "Opacity" },
-                    { value: "skew", label: "Skew" },
-                    { value: "filter", label: "Filter" },
-                  ].map(({ value, label }) => {
-                    const isUsed = keyframeForm.transforms.some(
-                      (t) => t.type === value
-                    );
-                    return (
-                      <SelectItem
-                        key={value}
-                        value={value}
-                        disabled={isUsed}
-                        className={isUsed ? "opacity-50" : ""}
-                      >
-                        {label} {isUsed ? "(added)" : ""}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="justify-between gap-1">
+                    <Plus className="h-4 w-4" />
+                    Add Transform
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-40 p-1" align="end">
+                  <div className="space-y-1">
+                    {[
+                      { value: "move", label: "Move" },
+                      { value: "scale", label: "Scale" },
+                      { value: "rotate", label: "Rotate" },
+                      { value: "opacity", label: "Opacity" },
+                      { value: "skew", label: "Skew" },
+                      { value: "filter", label: "Filter" },
+                    ].map(({ value, label }) => {
+                      const isUsed = keyframeForm.transforms.some(
+                        (t) => t.type === value
+                      );
+                      return (
+                        <Button
+                          key={value}
+                          variant="ghost"
+                          size="sm"
+                          className={`w-full justify-start text-left ${
+                            isUsed ? "opacity-50 cursor-not-allowed" : ""
+                          }`}
+                          disabled={isUsed}
+                          onClick={() =>
+                            handleAddTransform(value as TransformType)
+                          }
+                        >
+                          {label} {isUsed ? "(added)" : ""}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-4 overflow-y-auto max-h-[20rem]">
