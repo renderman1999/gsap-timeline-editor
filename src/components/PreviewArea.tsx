@@ -379,7 +379,7 @@ export function PreviewArea() {
     <div className="max-w-[700px] mx-auto w-full">
       {activeTimeline && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between my-4">
+          <div className="flex items-center justify-between mt-8 mb-4">
             <div className="flex items-center justify-between gap-4">
               <h3 className="text-lg font-semibold">Preview</h3>
               <Select
@@ -464,7 +464,7 @@ export function PreviewArea() {
 
           <div
             ref={containerRef}
-            className="bg-black rounded-lg p-8 min-h-64 flex items-center justify-center relative overflow-hidden"
+            className="bg-black rounded-lg p-8 min-h-80 flex items-center justify-center relative overflow-hidden"
           >
             <div ref={targetRef}>{renderShape()}</div>
           </div>
