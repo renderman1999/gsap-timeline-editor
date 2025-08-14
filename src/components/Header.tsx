@@ -60,11 +60,12 @@ export function Header() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-primary">
-            <i>GSAP Timeline Editor</i>
+            <i>Timeline Editor for GSAP</i>
             <span className="text-xs text-muted-foreground ml-2">v1.2</span>
           </h1>
           <p className="text-sm text-muted-foreground">
-            Create, edit, preview and share GSAP animations with ease
+            Create complex GSAP animations visually. Share and export final code
+            in one click.
           </p>
         </div>
 

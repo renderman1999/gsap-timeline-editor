@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GSAP Timeline Editor",
+  title: "Timeline Editor for GSAP",
   description:
     "Create, edit, and preview preview complex GSAP animations with ease using this visual editor. Share and export final code in one click.",
 };
@@ -41,7 +41,7 @@ export default function RootLayout({
           </div>
           <h1 className="text-2xl font-bold mb-2">Desktop App Only</h1>
           <p className="text-muted-foreground max-w-md mb-6">
-            The GSAP Timeline Editor requires a larger screen to provide the
+            Timeline Editor for GSAP requires a larger screen to provide the
             best experience. Please open this application on a desktop or laptop
             computer.
           </p>

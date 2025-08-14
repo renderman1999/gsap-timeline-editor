@@ -1,9 +1,8 @@
-# GSAP Timeline Editor | [gsap-editor.dymytrii.dev](https://gsap-editor.dymytrii.dev/)
+# Timeline Editor for GSAP | [gsap-editor.dymytrii.dev](https://gsap-editor.dymytrii.dev/)
 
 Create, edit, preview, and share GSAP animations with ease. This open-source application provides a GUI for building complex GSAP timelines visually, without writing code directly. It's perfect for animators, designers, and developers looking to streamline their animation workflow.
 
-<img width="500" height="282" alt="GSAP Timeline Editor by dymytrii.dev" src="https://github.com/user-attachments/assets/4d148740-3d8a-4f25-a682-3e0d893d7c7f" />
-
+<img width="500" height="282" alt="Timeline Editor for GSAP by dymytrii.dev" src="https://github.com/user-attachments/assets/4d148740-3d8a-4f25-a682-3e0d893d7c7f" />
 
 ## ✨ Features
 

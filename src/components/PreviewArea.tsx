@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Code } from "lucide-react";
 import { toast } from "react-toastify";
 import { generateTimelineCode } from "@/lib/timeline-utils";
-import { Square, Heart, Bell, Menu, AudioLines } from "lucide-react";
+import { Square, Circle, Triangle, Heart, Bell, Menu, AudioLines } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -273,6 +273,16 @@ export function PreviewArea() {
         value: "square",
         label: "Square",
         icon: <Square className="h-4 w-4" fill="currentColor" />,
+      },
+      {
+        value: "circle",
+        label: "Circle",
+        icon: <Circle className="h-4 w-4" fill="currentColor" />,
+      },
+      {
+        value: "triangle",
+        label: "Triangle",
+        icon: <Triangle className="h-4 w-4" fill="currentColor" />,
       },
       {
         value: "heart",
