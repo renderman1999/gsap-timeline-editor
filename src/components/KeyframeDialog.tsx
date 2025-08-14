@@ -97,6 +97,13 @@ export function KeyframeDialog({
     });
   };
 
+  // Helper function to normalize decimal input (handles both dot and comma)
+  const parseDecimalInput = (value: string): number => {
+    // Replace comma with dot for consistent parsing
+    const normalizedValue = value.replace(',', '.');
+    return parseFloat(normalizedValue) || 0;
+  };
+
   const handleAddTransform = (type: TransformType) => {
     // Check if transform type already exists
     const existingTransform = keyframeForm.transforms.find(
@@ -221,7 +228,7 @@ export function KeyframeDialog({
                 onChange={(e) =>
                   updateTransform(transform.id, {
                     ...transform.values,
-                    scaleX: parseFloat(e.target.value) || 1,
+                    scaleX: parseDecimalInput(e.target.value) || 1,
                   })
                 }
               />
@@ -237,7 +244,7 @@ export function KeyframeDialog({
                 onChange={(e) =>
                   updateTransform(transform.id, {
                     ...transform.values,
-                    scaleY: parseFloat(e.target.value) || 1,
+                    scaleY: parseDecimalInput(e.target.value) || 1,
                   })
                 }
               />
@@ -274,7 +281,7 @@ export function KeyframeDialog({
             onChange={(e) =>
               updateTransform(transform.id, {
                 ...transform.values,
-                opacity: parseFloat(e.target.value) || 0,
+                opacity: parseDecimalInput(e.target.value) || 0,
               })
             }
           />
@@ -294,7 +301,7 @@ export function KeyframeDialog({
                 onChange={(e) =>
                   updateTransform(transform.id, {
                     ...transform.values,
-                    skewX: parseFloat(e.target.value) || 0,
+                    skewX: parseDecimalInput(e.target.value) || 0,
                   })
                 }
               />
@@ -312,7 +319,7 @@ export function KeyframeDialog({
                 onChange={(e) =>
                   updateTransform(transform.id, {
                     ...transform.values,
-                    skewY: parseFloat(e.target.value) || 0,
+                    skewY: parseDecimalInput(e.target.value) || 0,
                   })
                 }
               />
@@ -389,7 +396,7 @@ export function KeyframeDialog({
                 value={keyframeForm.delay}
                 className="max-w-[5rem]"
                 onChange={(e) => {
-                  const value = parseFloat(e.target.value) || 0;
+                  const value = parseDecimalInput(e.target.value) || 0;
                   setKeyframeForm((prev) => ({
                     ...prev,
                     delay: roundDelay(value),
