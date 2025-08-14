@@ -99,6 +99,7 @@ export function KeyframeDialog({
 
   const handleAddTransform = (type: TransformType) => {
     const id = Math.random().toString(36).substr(2, 9);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let defaultValues: any = {};
 
     switch (type) {
@@ -141,6 +142,7 @@ export function KeyframeDialog({
     }));
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updateTransform = (transformId: string, values: any) => {
     setKeyframeForm((prev) => ({
       ...prev,
@@ -195,12 +197,14 @@ export function KeyframeDialog({
         );
       case "scale":
         return (
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label>Scale X</Label>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Label>X:</Label>
               <Input
                 type="number"
-                step="0.1"
+                step="0.01"
+                min="0"
+                className="max-w-[4rem]"
                 value={transform.values.scaleX as number}
                 onChange={(e) =>
                   updateTransform(transform.id, {
@@ -210,11 +214,13 @@ export function KeyframeDialog({
                 }
               />
             </div>
-            <div>
-              <Label>Scale Y</Label>
+            <div className="flex items-center gap-2">
+              <Label>Y:</Label>
               <Input
                 type="number"
-                step="0.1"
+                step="0.01"
+                min="0"
+                className="max-w-[4rem]"
                 value={transform.values.scaleY as number}
                 onChange={(e) =>
                   updateTransform(transform.id, {
@@ -245,12 +251,12 @@ export function KeyframeDialog({
       case "opacity":
         return (
           <div>
-            <Label>Opacity</Label>
             <Input
               type="number"
               step="0.01"
               min="0"
               max="1"
+              className="max-w-[4rem]"
               value={transform.values.opacity as number}
               onChange={(e) =>
                 updateTransform(transform.id, {
@@ -263,9 +269,9 @@ export function KeyframeDialog({
         );
       case "skew":
         return (
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label>Skew X</Label>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Label>X:</Label>
               <Input
                 type="number"
                 value={transform.values.skewX as number}
@@ -277,8 +283,8 @@ export function KeyframeDialog({
                 }
               />
             </div>
-            <div>
-              <Label>Skew Y</Label>
+            <div className="flex items-center gap-2">
+              <Label>Y:</Label>
               <Input
                 type="number"
                 value={transform.values.skewY as number}
@@ -309,7 +315,7 @@ export function KeyframeDialog({
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="overflow-y-auto max-h-[20rem]">
                   {CSS_FILTERS.map((filter) => (
                     <SelectItem key={filter} value={filter}>
                       {filter}
@@ -345,19 +351,20 @@ export function KeyframeDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md max-h-[80vh]">
+      <DialogContent className="max-w-[450px] max-h-[80vh]">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 max-h-[60vh] overflow-y-auto">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Delay (s)</Label>
+        <div className="space-y-6">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <Label>Position, s:</Label>
               <Input
                 type="number"
                 step="0.001"
                 min="0"
                 value={keyframeForm.delay}
+                className="max-w-[5rem]"
                 onChange={(e) => {
                   const value = parseFloat(e.target.value) || 0;
                   setKeyframeForm((prev) => ({
@@ -367,13 +374,14 @@ export function KeyframeDialog({
                 }}
               />
             </div>
-            <div>
-              <Label>Duration (ms)</Label>
+            <div className="flex items-center gap-2">
+              <Label>Duration, ms:</Label>
               <Input
                 type="number"
                 step="1"
                 min="1"
                 value={keyframeForm.duration}
+                className="max-w-[5rem]"
                 onChange={(e) => {
                   const value = parseInt(e.target.value) || 1000;
                   setKeyframeForm((prev) => ({
@@ -385,8 +393,8 @@ export function KeyframeDialog({
             </div>
           </div>
 
-          <div>
-            <Label>Easing</Label>
+          <div className="flex items-center gap-2">
+            <Label>Easing:</Label>
             <Select
               value={keyframeForm.easing}
               onValueChange={(value) =>
@@ -396,7 +404,7 @@ export function KeyframeDialog({
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="overflow-y-auto max-h-[20rem]">
                 {GSAP_EASINGS.map((easing) => (
                   <SelectItem key={easing} value={easing}>
                     {easing}
@@ -406,9 +414,9 @@ export function KeyframeDialog({
             </Select>
           </div>
 
-          <div>
+          <Card className="px-4 py-2 ">
             <div className="flex items-center justify-between mb-2">
-              <Label>Transforms</Label>
+              <Label className="text-md font-bold">Transforms</Label>
               <Select
                 onValueChange={(value: TransformType) =>
                   handleAddTransform(value)
@@ -428,26 +436,31 @@ export function KeyframeDialog({
               </Select>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4 overflow-y-auto max-h-[20rem]">
               {keyframeForm.transforms.map((transform) => (
-                <Card key={transform.id} className="p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium capitalize">
-                      {transform.type}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => removeTransform(transform.id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
+                // <Card key={transform.id} className="p-3">
+                <div
+                  key={transform.id}
+                  className="flex items-center justify-start gap-2 mb-2"
+                >
+                  <span className="text-sm font-medium capitalize">
+                    {transform.type}
+                  </span>
+
                   {renderTransformFields(transform)}
-                </Card>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => removeTransform(transform.id)}
+                    className="ml-auto"
+                  >
+                    <Trash2 className="h-3 w-3 text-red-500" />
+                  </Button>
+                </div>
+                // </Card>
               ))}
             </div>
-          </div>
+          </Card>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={handleCancel}>
