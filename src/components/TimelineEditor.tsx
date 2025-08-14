@@ -12,11 +12,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -93,10 +88,10 @@ export function TimelineEditor() {
     zoom,
     setZoom,
   } = useTimelineStore();
-  
+
   // Memoize active timeline with stable dependencies
   const activeTimeline = useMemo(() => {
-    return timelines.find(t => t.id === activeTimelineId) || null;
+    return timelines.find((t) => t.id === activeTimelineId) || null;
   }, [timelines, activeTimelineId]);
 
   // Removed isAddKeyframeOpen - no longer using Add popover
@@ -139,43 +134,52 @@ export function TimelineEditor() {
     return lastKeyframe.delay + lastKeyframe.duration / 1000;
   }, [activeTimeline?.keyframes]);
 
-  const totalDuration = useMemo(() => getLastKeyframeEndMemo(), [getLastKeyframeEndMemo]);
-  
+  const totalDuration = useMemo(
+    () => getLastKeyframeEndMemo(),
+    [getLastKeyframeEndMemo]
+  );
+
   const timeMarkers = useMemo(() => {
     return Array.from({ length: Math.ceil(totalDuration) + 1 }, (_, i) => i);
   }, [totalDuration]);
-  
+
   const timelineWidth = useMemo(() => {
     return totalDuration * 100 * zoom;
   }, [totalDuration, zoom]);
 
   // Handle mouse events for drag and resize
-  const handleMouseDown = useCallback((
-    e: React.MouseEvent,
-    keyframe: Keyframe,
-    type: "move" | "resize"
-  ) => {
-    e.stopPropagation();
-    console.log('MouseDown triggered:', { type, keyframeId: keyframe.id, activeTimeline: !!activeTimeline });
-    
-    if (!timelineRef.current || !activeTimeline) {
-      console.log('Missing refs:', { timelineRef: !!timelineRef.current, activeTimeline: !!activeTimeline });
-      return;
-    }
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent, keyframe: Keyframe, type: "move" | "resize") => {
+      e.stopPropagation();
+      console.log("MouseDown triggered:", {
+        type,
+        keyframeId: keyframe.id,
+        activeTimeline: !!activeTimeline,
+      });
 
-    const rect = timelineRef.current.getBoundingClientRect();
-    const startX = e.clientX - rect.left;
+      if (!timelineRef.current || !activeTimeline) {
+        console.log("Missing refs:", {
+          timelineRef: !!timelineRef.current,
+          activeTimeline: !!activeTimeline,
+        });
+        return;
+      }
 
-    setDragOperation({
-      type,
-      keyframeId: keyframe.id,
-      startX,
-      startDelay: keyframe.delay,
-      startDuration: keyframe.duration,
-    });
-    setIsDragging(true);
-    console.log('Drag operation set:', { type, keyframeId: keyframe.id });
-  }, [activeTimeline]);
+      const rect = timelineRef.current.getBoundingClientRect();
+      const startX = e.clientX - rect.left;
+
+      setDragOperation({
+        type,
+        keyframeId: keyframe.id,
+        startX,
+        startDelay: keyframe.delay,
+        startDuration: keyframe.duration,
+      });
+      setIsDragging(true);
+      console.log("Drag operation set:", { type, keyframeId: keyframe.id });
+    },
+    [activeTimeline]
+  );
 
   // Helper function to snap value to grid with minimum step size
   const snapToGrid = (
@@ -194,54 +198,62 @@ export function TimelineEditor() {
     return isTime ? snapped / 1000 : snapped;
   };
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    console.log('MouseMove triggered:', { isDragging, dragOperation: !!dragOperation, timelineRef: !!timelineRef.current, activeTimeline: !!activeTimeline });
-    
-    if (
-      !isDragging ||
-      !dragOperation ||
-      !timelineRef.current ||
-      !activeTimeline
-    ) {
-      console.log('MouseMove early return:', { isDragging, dragOperation: !!dragOperation, timelineRef: !!timelineRef.current, activeTimeline: !!activeTimeline });
-      return;
-    }
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+        isDragging,
+        dragOperation: !!dragOperation,
+        timelineRef: !!timelineRef.current,
+        activeTimeline: !!activeTimeline,
+      });
 
-    const rect = timelineRef.current.getBoundingClientRect();
-    const currentX = e.clientX - rect.left;
-    const deltaX = currentX - dragOperation.startX;
+      if (
+        !isDragging ||
+        !dragOperation ||
+        !timelineRef.current ||
+        !activeTimeline
+      ) {
+        return;
+      }
 
-    // Convert pixel delta to time delta based on zoom level and total duration
-    const pixelsPerSecond = rect.width / totalDuration;
-    const timeDelta = deltaX / pixelsPerSecond;
+      const rect = timelineRef.current.getBoundingClientRect();
+      const currentX = e.clientX - rect.left;
+      const deltaX = currentX - dragOperation.startX;
 
-    const keyframe = activeTimeline.keyframes.find(
-      (k) => k.id === dragOperation.keyframeId
-    );
-    if (!keyframe) return;
+      // Convert pixel delta to time delta based on zoom level and total duration
+      const pixelsPerSecond = rect.width / totalDuration;
+      const timeDelta = deltaX / pixelsPerSecond;
 
-    setDidDrag(true);
-
-    // Minimum step size in milliseconds
-    const minStepMs = 50;
-
-    if (dragOperation.type === "move") {
-      // Update delay (position) with snapping
-      const rawNewDelay = Math.max(0, dragOperation.startDelay + timeDelta);
-      // Snap to grid with minimum step of 50ms (0.05s)
-      const newDelay = snapToGrid(rawNewDelay, minStepMs / 1000, true);
-      updateKeyframe(activeTimeline.id, keyframe.id, { delay: newDelay });
-    } else if (dragOperation.type === "resize") {
-      // Update duration with snapping
-      const rawNewDuration = Math.max(
-        minStepMs,
-        dragOperation.startDuration + timeDelta * 1000
+      const keyframe = activeTimeline.keyframes.find(
+        (k) => k.id === dragOperation.keyframeId
       );
-      // Snap to grid with minimum step of 50ms
-      const newDuration = snapToGrid(rawNewDuration, minStepMs, false);
-      updateKeyframe(activeTimeline.id, keyframe.id, { duration: newDuration });
-    }
-  }, [isDragging, dragOperation, activeTimeline, totalDuration, updateKeyframe]);
+      if (!keyframe) return;
+
+      setDidDrag(true);
+
+      // Minimum step size in milliseconds
+      const minStepMs = 50;
+
+      if (dragOperation.type === "move") {
+        // Update delay (position) with snapping
+        const rawNewDelay = Math.max(0, dragOperation.startDelay + timeDelta);
+        // Snap to grid with minimum step of 50ms (0.05s)
+        const newDelay = snapToGrid(rawNewDelay, minStepMs / 1000, true);
+        updateKeyframe(activeTimeline.id, keyframe.id, { delay: newDelay });
+      } else if (dragOperation.type === "resize") {
+        // Update duration with snapping
+        const rawNewDuration = Math.max(
+          minStepMs,
+          dragOperation.startDuration + timeDelta * 1000
+        );
+        // Snap to grid with minimum step of 50ms
+        const newDuration = snapToGrid(rawNewDuration, minStepMs, false);
+        updateKeyframe(activeTimeline.id, keyframe.id, {
+          duration: newDuration,
+        });
+      }
+    },
+    [isDragging, dragOperation, activeTimeline, totalDuration, updateKeyframe]
+  );
 
   const handleMouseUp = useCallback(() => {
     setDragOperation(null);
@@ -362,9 +374,14 @@ export function TimelineEditor() {
   const handleAddKeyframe = () => {
     if (!activeTimeline) return;
 
-    // Create default keyframe
+    // Calculate delay to place new keyframe after the last existing keyframe
+    const lastKeyframeEnd = activeTimeline.keyframes.length > 0 
+      ? Math.max(...activeTimeline.keyframes.map(k => k.delay + k.duration / 1000))
+      : 0;
+
+    // Create default keyframe positioned after the last one
     const defaultKeyframe = {
-      delay: 0,
+      delay: lastKeyframeEnd,
       duration: 1000,
       easing: "power2.inOut",
       transforms: [],
@@ -580,7 +597,6 @@ export function TimelineEditor() {
       </div>
     );
   }
-
 
   return (
     <div className="flex-1 flex flex-col">
@@ -863,7 +879,9 @@ export function TimelineEditor() {
                   }`}
                   style={{
                     left: `${(keyframe.delay / totalDuration) * 100}%`,
-                    width: `${(keyframe.duration / 1000 / totalDuration) * 100}%`,
+                    width: `${
+                      (keyframe.duration / 1000 / totalDuration) * 100
+                    }%`,
                     cursor: isDragging
                       ? dragOperation?.keyframeId === keyframe.id
                         ? dragOperation?.type === "move"
