@@ -10,7 +10,15 @@ import { Label } from "@/components/ui/label";
 import { Code } from "lucide-react";
 import { toast } from "react-toastify";
 import { generateTimelineCode } from "@/lib/timeline-utils";
-import { Square, Circle, Triangle, Heart, Bell, Menu, AudioLines } from "lucide-react";
+import {
+  Square,
+  Circle,
+  Triangle,
+  Heart,
+  Bell,
+  Menu,
+  AudioLines,
+} from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -30,6 +38,7 @@ export function PreviewArea() {
     targetShape,
     setTargetShape,
     isPlaying,
+    setPlaying,
     currentTime,
     setCurrentTime,
     updateTimeline,
@@ -100,6 +109,13 @@ export function PreviewArea() {
       onUpdate: () => {
         if (tl) {
           setCurrentTime(tl.time());
+        }
+      },
+      onComplete: () => {
+        // Auto-stop when non-looped timeline finishes
+        if (!activeTimeline.loop) {
+          setPlaying(false);
+          setCurrentTime(0);
         }
       },
     });
@@ -300,7 +316,7 @@ export function PreviewArea() {
     if (timelineRef.current && isPlaying) {
       timelineRef.current.play();
     }
-  }, [timelineData, isPlaying]);
+  }, [timelineData]);
 
   useEffect(() => {
     if (timelineRef.current) {
@@ -445,7 +461,7 @@ export function PreviewArea() {
                     htmlFor="yoyo-toggle"
                     className="text-xs cursor-pointer"
                   >
-                    Boomerang?
+                    Boomerang
                   </Label>
                 </div>
               )}

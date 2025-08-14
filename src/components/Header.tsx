@@ -74,23 +74,23 @@ export function Header() {
             variant="outline"
             size="sm"
             className="gap-2"
-            onClick={handleExport}
+            onClick={handleImport}
           >
             <Download className="h-4 w-4" />
-            Export
+            Import
           </Button>
 
           <Button
             variant="outline"
             size="sm"
             className="gap-2"
-            onClick={handleImport}
+            onClick={handleExport}
           >
             <Upload className="h-4 w-4" />
-            Import
+            Export My Timelines
           </Button>
 
-          <Link
+          {/* <Link
             href="https://github.com/DymytriiDev/gsap-timeline-editor"
             target="_blank"
           >
@@ -98,7 +98,7 @@ export function Header() {
               <Star className="h-4 w-4" />
               Star on GitHub
             </Button>
-          </Link>
+          </Link> */}
           {/* <Button variant="ghost" size="sm" className="gap-2">
             <CircleDollarSign className="h-4 w-4" />
             Buy me a coffee
