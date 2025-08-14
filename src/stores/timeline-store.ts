@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { roundDelay, roundDuration } from "@/utils/round";
 
 export type TransformType = 'move' | 'rotate' | 'opacity' | 'skew' | 'filter' | 'scale';
 
@@ -175,8 +176,13 @@ export const useTimelineStore = create<TimelineState>()(
       
       addKeyframe: (timelineId, keyframe) => {
         const id = Math.random().toString(36).substr(2, 9);
-        const newKeyframe = { ...keyframe, id };
-        
+        const newKeyframe = {
+          ...keyframe,
+          id,
+          delay: roundDelay(keyframe.delay),
+          duration: roundDuration(keyframe.duration),
+        };
+
         set((state) => ({
           timelines: state.timelines.map(timeline =>
             timeline.id === timelineId
@@ -187,6 +193,15 @@ export const useTimelineStore = create<TimelineState>()(
       },
       
       updateKeyframe: (timelineId, keyframeId, updates) => {
+        // Round delay and duration if they are being updated
+        const roundedUpdates = { ...updates };
+        if (updates.delay !== undefined) {
+          roundedUpdates.delay = roundDelay(updates.delay);
+        }
+        if (updates.duration !== undefined) {
+          roundedUpdates.duration = roundDuration(updates.duration);
+        }
+
         set((state) => ({
           timelines: state.timelines.map(timeline =>
             timeline.id === timelineId

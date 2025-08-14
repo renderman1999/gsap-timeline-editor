@@ -1,6 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { roundDelay, roundDuration } from "@/utils/round";
+import { CSS_FILTERS } from "@/constants/filters";
+import { GSAP_EASINGS } from "@/constants/easings";
+
 import {
   Play,
   Pause,
@@ -34,52 +38,6 @@ import {
   type Transform,
   type TransformType,
 } from "@/stores/timeline-store";
-
-const GSAP_EASINGS = [
-  "none",
-  "power1.in",
-  "power1.out",
-  "power1.inOut",
-  "power2.in",
-  "power2.out",
-  "power2.inOut",
-  "power3.in",
-  "power3.out",
-  "power3.inOut",
-  "power4.in",
-  "power4.out",
-  "power4.inOut",
-  "back.in",
-  "back.out",
-  "back.inOut",
-  "elastic.in",
-  "elastic.out",
-  "elastic.inOut",
-  "bounce.in",
-  "bounce.out",
-  "bounce.inOut",
-  "circ.in",
-  "circ.out",
-  "circ.inOut",
-  "expo.in",
-  "expo.out",
-  "expo.inOut",
-  "sine.in",
-  "sine.out",
-  "sine.inOut",
-];
-
-const CSS_FILTERS = [
-  "blur",
-  "brightness",
-  "contrast",
-  "grayscale",
-  "hue-rotate",
-  "invert",
-  "opacity",
-  "saturate",
-  "sepia",
-];
 
 export function TimelineEditor() {
   const {
@@ -154,19 +112,8 @@ export function TimelineEditor() {
   const handleMouseDown = useCallback(
     (e: React.MouseEvent, keyframe: Keyframe, type: "move" | "resize") => {
       e.stopPropagation();
-      console.log("MouseDown triggered:", {
-        type,
-        keyframeId: keyframe.id,
-        activeTimeline: !!activeTimeline,
-      });
 
-      if (!timelineRef.current || !activeTimeline) {
-        console.log("Missing refs:", {
-          timelineRef: !!timelineRef.current,
-          activeTimeline: !!activeTimeline,
-        });
-        return;
-      }
+      if (!timelineRef.current || !activeTimeline) return;
 
       const rect = timelineRef.current.getBoundingClientRect();
       const startX = e.clientX - rect.left;
@@ -179,7 +126,6 @@ export function TimelineEditor() {
         startDuration: keyframe.duration,
       });
       setIsDragging(true);
-      console.log("Drag operation set:", { type, keyframeId: keyframe.id });
     },
     [activeTimeline]
   );
@@ -573,7 +519,8 @@ export function TimelineEditor() {
   if (!activeTimeline) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground">
-        Select a timeline to start editing
+        There are no timelines to edit. Please create a new timeline through the
+        left sidebar.
       </div>
     );
   }
@@ -659,28 +606,32 @@ export function TimelineEditor() {
                 <Label>Delay (s)</Label>
                 <Input
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   min="0"
                   value={keyframeForm.delay}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value) || 0;
                     setKeyframeForm((prev) => ({
                       ...prev,
-                      delay: parseFloat(e.target.value) || 0,
-                    }))
-                  }
+                      delay: roundDelay(value),
+                    }));
+                  }}
                 />
               </div>
               <div>
                 <Label>Duration (ms)</Label>
                 <Input
                   type="number"
+                  step="1"
+                  min="1"
                   value={keyframeForm.duration}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value) || 1000;
                     setKeyframeForm((prev) => ({
                       ...prev,
-                      duration: parseInt(e.target.value) || 1000,
-                    }))
-                  }
+                      duration: roundDuration(value),
+                    }));
+                  }}
                 />
               </div>
             </div>
@@ -784,28 +735,32 @@ export function TimelineEditor() {
                 <Label>Delay (s)</Label>
                 <Input
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   min="0"
                   value={keyframeForm.delay}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value) || 0;
                     setKeyframeForm((prev) => ({
                       ...prev,
-                      delay: parseFloat(e.target.value) || 0,
-                    }))
-                  }
+                      delay: roundDelay(value),
+                    }));
+                  }}
                 />
               </div>
               <div>
                 <Label>Duration (ms)</Label>
                 <Input
                   type="number"
+                  step="1"
+                  min="1"
                   value={keyframeForm.duration}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value) || 1000;
                     setKeyframeForm((prev) => ({
                       ...prev,
-                      duration: parseInt(e.target.value) || 1000,
-                    }))
-                  }
+                      duration: roundDuration(value),
+                    }));
+                  }}
                 />
               </div>
             </div>

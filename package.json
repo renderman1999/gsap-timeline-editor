@@ -1,7 +1,7 @@
 {
   "name": "gsap-timeline-editor",
   "version": "1.2",
-  "description": "Create, edit, preview, and share GSAP animations with ease.",
+  "description": "Create complex GSAP animations visually. Share and export final code in one click.",
   "author": "Dymytrii Ishchuk",
   "homepage": "https://gsap-editor.dymytrii.dev/",
   "license": "MIT",
