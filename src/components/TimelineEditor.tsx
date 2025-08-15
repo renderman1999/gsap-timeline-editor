@@ -329,12 +329,7 @@ export function TimelineEditor() {
             </Button>
           </div>
 
-          <Button
-            size="sm"
-            variant="default"
-            className="gap-2"
-            onClick={handleAddKeyframe}
-          >
+          <Button size="sm" className="gap-2" onClick={handleAddKeyframe}>
             <Plus className="h-4 w-4" />
             Add Keyframe
           </Button>

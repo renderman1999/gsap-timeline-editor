@@ -60,12 +60,22 @@ export function Header() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-primary">
-            <i>Timeline Editor for GSAP</i>
+            <i>
+              Timeline Editor for{" "}
+              <Link
+                className="hover:underline"
+                target="_blank"
+                href="https://gsap.com/"
+              >
+                GSAP
+              </Link>
+            </i>
             <span className="text-xs text-muted-foreground ml-2">
               v1.2,{" "}
               <span>
                 by{" "}
                 <Link
+                  className="hover:underline"
                   target="_blank"
                   href="https://www.linkedin.com/in/dymytrii/"
                 >

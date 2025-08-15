@@ -469,7 +469,7 @@ export function PreviewArea() {
               <Button
                 size="sm"
                 variant="outline"
-                className="gap-2"
+                className="gap-2 !border-primary !text-primary"
                 onClick={handleExportCode}
               >
                 <Code className="h-4 w-4" />
