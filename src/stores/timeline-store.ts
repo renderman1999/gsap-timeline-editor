@@ -87,13 +87,13 @@ const createDemoTimeline = (): Timeline => ({
   name: "Demo Animation",
   playbackType: "normal",
   loop: true,
-  yoyo: false,
+  yoyo: true,
   targetShape: "heart",
   keyframes: [
     {
       id: "heartbeat-1",
       delay: 0,
-      duration: 200,
+      duration: 400,
       easing: "power2.out",
       transforms: [
         {
@@ -104,11 +104,34 @@ const createDemoTimeline = (): Timeline => ({
             scaleY: 1.2,
           },
         },
+        {
+          id: "zup7zzrzr",
+          type: "move",
+          values: {
+            x: 0,
+            y: 0,
+          },
+        },
+        {
+          id: "tc6f2ux9z",
+          type: "opacity",
+          values: {
+            opacity: 1,
+          },
+        },
+        {
+          id: "ukoog22e9",
+          type: "skew",
+          values: {
+            skewX: 0,
+            skewY: 0,
+          },
+        },
       ],
     },
     {
       id: "heartbeat-2",
-      delay: 0.2,
+      delay: 0.4,
       duration: 250,
       easing: "power2.in",
       transforms: [
@@ -123,7 +146,7 @@ const createDemoTimeline = (): Timeline => ({
       ],
     },
     {
-      delay: 0.45,
+      delay: 0.65,
       duration: 400,
       easing: "power3.out",
       transforms: [
@@ -139,7 +162,7 @@ const createDemoTimeline = (): Timeline => ({
       id: "uj13pdefb",
     },
     {
-      delay: 0.85,
+      delay: 1.05,
       duration: 600,
       easing: "power3.in",
       transforms: [
@@ -153,6 +176,31 @@ const createDemoTimeline = (): Timeline => ({
         },
       ],
       id: "265pf8dj5",
+    },
+  ],
+  initialState: [
+    {
+      id: "0r0lcom0c",
+      type: "move",
+      values: {
+        x: -150,
+        y: 0,
+      },
+    },
+    {
+      id: "t0uto5tvd",
+      type: "opacity",
+      values: {
+        opacity: 0,
+      },
+    },
+    {
+      id: "mqp92h3b5",
+      type: "skew",
+      values: {
+        skewX: -20,
+        skewY: 0,
+      },
     },
   ],
 });

@@ -145,7 +145,8 @@ export function PreviewArea() {
             initialProps.rotation = transform.values.rotation || 0;
             break;
           case "opacity":
-            initialProps.opacity = transform.values.opacity || 1;
+            // Use direct assignment to handle 0 properly
+            initialProps.opacity = transform.values.opacity !== undefined ? transform.values.opacity : 1;
             break;
           case "skew":
             initialProps.skewX = transform.values.skewX || 0;
