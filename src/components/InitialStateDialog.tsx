@@ -230,14 +230,12 @@ export function InitialStateDialog({
             max="1"
             className="max-w-[3rem] ml-1"
             value={transform.values.opacity as number}
-            onChange={(e) => {
-              const parsedValue = parseDecimalInput(e.target.value);
-              // Use the parsed value directly, don't use || which treats 0 as falsy
+            onChange={(e) =>
               updateTransform(transform.id, {
                 ...transform.values,
-                opacity: parsedValue,
-              });
-            }}
+                opacity: parseDecimalInput(e.target.value) || 0,
+              })
+            }
           />
         );
       case "skew":
