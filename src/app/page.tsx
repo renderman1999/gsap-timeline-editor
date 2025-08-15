@@ -2,6 +2,13 @@ import { Header } from "@/components/Header";
 import { TimelinesSidebar } from "@/components/TimelinesSidebar";
 import { TimelineEditor } from "@/components/TimelineEditor";
 import { PreviewArea } from "@/components/PreviewArea";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Timeline Editor for GSAP",
+  description:
+    "Create, edit, and preview preview complex GSAP animations with ease using this visual editor. Share and export final code in one click.",
+};
 
 export default function Home() {
   return (

@@ -61,7 +61,18 @@ export function Header() {
         <div>
           <h1 className="text-2xl font-bold text-primary">
             <i>Timeline Editor for GSAP</i>
-            <span className="text-xs text-muted-foreground ml-2">v1.2</span>
+            <span className="text-xs text-muted-foreground ml-2">
+              v1.2,{" "}
+              <span>
+                by{" "}
+                <Link
+                  target="_blank"
+                  href="https://www.linkedin.com/in/dymytrii/"
+                >
+                  DymytriiDev
+                </Link>
+              </span>
+            </span>
           </h1>
           <p className="text-sm text-muted-foreground">
             Create complex GSAP animations visually. Share and export final code
