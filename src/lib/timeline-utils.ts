@@ -1,3 +1,28 @@
+import {
+  buildTweenSteps,
+  EXPORT_CODE_VERSION,
+  SCROLL_TRIGGER_SELECTOR,
+  tweenStepsToCodeLines,
+} from "@/lib/gsap-build";
+import {
+  timelineUsesDrawSvg,
+  timelineUsesMorphSvg,
+} from "@/lib/gsap-svg-plugins";
+import { timelineUsesCssRule } from "@/lib/gsap-css-rule";
+import {
+  draggableSetupCodeLines,
+  timelineUsesDraggable,
+  timelineUsesDraggableInertia,
+} from "@/lib/gsap-draggable";
+import {
+  timelineUsesMotionPath,
+} from "@/lib/gsap-motion-path";
+import {
+  splitTextCreateCode,
+  timelineUsesSplitText,
+} from "@/lib/gsap-split-text";
+import { normalizeTimeline } from "@/lib/timeline-migrate";
+import { scrollTriggerTimelineCodeLines } from "@/lib/gsap-scroll-pin";
 import { Timeline } from "@/stores/timeline-store";
 
 export interface TimelineExport {
@@ -8,7 +33,7 @@ export interface TimelineExport {
 
 export const exportTimelines = (timelines: Timeline[]): string => {
   const exportData: TimelineExport = {
-    version: "1.2.0",
+    version: EXPORT_CODE_VERSION,
     timelines,
     exportedAt: new Date().toISOString(),
   };
@@ -63,14 +88,76 @@ export const downloadTimelines = (timelines: Timeline[], filename?: string) => {
 };
 
 export const generateTimelineCode = (timeline: Timeline): string => {
+  const model = normalizeTimeline(timeline);
   const lines: string[] = [];
+  const isScroll = model.playbackType === "scroll";
 
-  lines.push(`// GSAP Timeline: ${timeline.name}`);
+  lines.push(`// GSAP Timeline: ${model.name}`);
+  lines.push(`// Generated with GSAP Timeline Editor v${EXPORT_CODE_VERSION}`);
+  lines.push(`import { gsap } from "gsap";`);
+  lines.push(`import { ScrollTrigger } from "gsap/ScrollTrigger";`);
+  const needsDraw = timelineUsesDrawSvg(model);
+  const needsMorph = timelineUsesMorphSvg(model);
+  const needsSplit = timelineUsesSplitText(model);
+  const needsMotionPath = timelineUsesMotionPath(model);
+  const needsCssRule = timelineUsesCssRule(model);
+  const needsDraggable = timelineUsesDraggable(model);
+  const needsInertia = timelineUsesDraggableInertia(model);
+  if (needsDraw) {
+    lines.push(`import { DrawSVGPlugin } from "gsap/DrawSVGPlugin";`);
+  }
+  if (needsMorph) {
+    lines.push(`import { MorphSVGPlugin } from "gsap/MorphSVGPlugin";`);
+  }
+  if (needsSplit) {
+    lines.push(`import { SplitText } from "gsap/SplitText";`);
+  }
+  if (needsMotionPath) {
+    lines.push(`import { MotionPathPlugin } from "gsap/MotionPathPlugin";`);
+  }
+  if (needsCssRule) {
+    lines.push(`import { CSSRulePlugin } from "gsap/CSSRulePlugin";`);
+  }
+  if (needsDraggable) {
+    lines.push(`import { Draggable } from "gsap/Draggable";`);
+  }
+  if (needsInertia) {
+    lines.push(`import { InertiaPlugin } from "gsap/InertiaPlugin";`);
+  }
+  lines.push("");
+  lines.push(`gsap.registerPlugin(ScrollTrigger);`);
+  if (needsDraw) {
+    lines.push(`gsap.registerPlugin(DrawSVGPlugin);`);
+  }
+  if (needsMorph) {
+    lines.push(`gsap.registerPlugin(MorphSVGPlugin);`);
+  }
+  if (needsSplit) {
+    lines.push(`gsap.registerPlugin(SplitText);`);
+  }
+  if (needsMotionPath) {
+    lines.push(`gsap.registerPlugin(MotionPathPlugin);`);
+  }
+  if (needsCssRule) {
+    lines.push(`gsap.registerPlugin(CSSRulePlugin);`);
+  }
+  if (needsDraggable) {
+    lines.push(`gsap.registerPlugin(Draggable);`);
+  }
+  if (needsInertia) {
+    lines.push(`gsap.registerPlugin(InertiaPlugin);`);
+  }
+  lines.push("");
   lines.push(`const tl = gsap.timeline({`);
 
-  if (timeline.loop) {
+  if (isScroll) {
+    lines.push(`  defaults: { immediateRender: false },`);
+    scrollTriggerTimelineCodeLines(model, SCROLL_TRIGGER_SELECTOR).forEach(
+      (line) => lines.push(line)
+    );
+  } else if (model.loop) {
     lines.push(`  repeat: -1,`);
-    if (timeline.yoyo) {
+    if (model.yoyo) {
       lines.push(`  yoyo: true,`);
     }
   }
@@ -78,182 +165,39 @@ export const generateTimelineCode = (timeline: Timeline): string => {
   lines.push(`});`);
   lines.push("");
 
-  // Sort keyframes by delay
-  const sortedKeyframes = [...timeline.keyframes].sort(
-    (a, b) => a.delay - b.delay
-  );
+  model.targets.forEach((target) => {
+    splitTextCreateCode(target).forEach((line) => lines.push(line));
+  });
+  if (model.targets.some((t) => splitTextCreateCode(t).length > 0)) {
+    lines.push("");
+  }
 
-  sortedKeyframes.forEach((keyframe, index) => {
-    // Skip keyframes without transforms
-    if (keyframe.transforms.length === 0) {
-      return;
-    }
+  model.targets.forEach((target) => {
+    const layerKeyframes = model.keyframes.filter(
+      (k) => k.targetId === target.id
+    );
+    if (layerKeyframes.length === 0) return;
 
-    const transformProps: string[] = [];
-    const fromProps: string[] = [];
-
-    // For the first keyframe with Initial State, collect from values
-    const isFirstKeyframe = index === 0;
-    const hasInitialState = timeline.initialState && timeline.initialState.length > 0;
-
-    keyframe.transforms.forEach((transform) => {
-      // Find corresponding initial state transform if this is the first keyframe
-      let initialTransform = null;
-      if (isFirstKeyframe && hasInitialState) {
-        initialTransform = timeline.initialState!.find(t => t.type === transform.type);
-      }
-
-      switch (transform.type) {
-        case "move":
-          // Include x and y values even if they're 0
-          transformProps.push(`x: ${transform.values.x}`);
-          transformProps.push(`y: ${transform.values.y}`);
-          
-          if (initialTransform) {
-            fromProps.push(`x: ${initialTransform.values.x || 0}`);
-            fromProps.push(`y: ${initialTransform.values.y || 0}`);
-          }
-          break;
-        case "rotate":
-          transformProps.push(`rotation: ${transform.values.rotation}`);
-          
-          if (initialTransform) {
-            fromProps.push(`rotation: ${initialTransform.values.rotation || 0}`);
-          }
-          break;
-        case "opacity":
-          transformProps.push(`opacity: ${transform.values.opacity}`);
-          
-          if (initialTransform) {
-            fromProps.push(`opacity: ${initialTransform.values.opacity || 1}`);
-          }
-          break;
-        case "skew":
-          // Include skewX and skewY values even if they're 0
-          transformProps.push(`skewX: ${transform.values.skewX}`);
-          transformProps.push(`skewY: ${transform.values.skewY}`);
-          
-          if (initialTransform) {
-            fromProps.push(`skewX: ${initialTransform.values.skewX || 0}`);
-            fromProps.push(`skewY: ${initialTransform.values.skewY || 0}`);
-          }
-          break;
-        case "scale":
-          // Include scaleX and scaleY values even if they're 1
-          transformProps.push(`scaleX: ${transform.values.scaleX}`);
-          transformProps.push(`scaleY: ${transform.values.scaleY}`);
-          
-          if (initialTransform) {
-            fromProps.push(`scaleX: ${initialTransform.values.scaleX || 1}`);
-            fromProps.push(`scaleY: ${initialTransform.values.scaleY || 1}`);
-          }
-          break;
-        case "filter":
-          const filterType = transform.values.filter;
-          const filterValue = transform.values.value;
-          let filterString = "";
-
-          switch (filterType) {
-            case "blur":
-              filterString = `blur(${filterValue}px)`;
-              break;
-            case "brightness":
-              filterString = `brightness(${filterValue}%)`;
-              break;
-            case "contrast":
-              filterString = `contrast(${filterValue}%)`;
-              break;
-            case "grayscale":
-              filterString = `grayscale(${filterValue}%)`;
-              break;
-            case "hue-rotate":
-              filterString = `hue-rotate(${filterValue}deg)`;
-              break;
-            case "invert":
-              filterString = `invert(${filterValue}%)`;
-              break;
-            case "opacity":
-              filterString = `opacity(${filterValue}%)`;
-              break;
-            case "saturate":
-              filterString = `saturate(${filterValue}%)`;
-              break;
-            case "sepia":
-              filterString = `sepia(${filterValue}%)`;
-              break;
-          }
-
-          transformProps.push(`filter: "${filterString}"`);
-          
-          if (initialTransform) {
-            const initialFilterType = initialTransform.values.filter;
-            const initialFilterValue = initialTransform.values.value;
-            let initialFilterString = "";
-
-            switch (initialFilterType) {
-              case "blur":
-                initialFilterString = `blur(${initialFilterValue}px)`;
-                break;
-              case "brightness":
-                initialFilterString = `brightness(${initialFilterValue}%)`;
-                break;
-              case "contrast":
-                initialFilterString = `contrast(${initialFilterValue}%)`;
-                break;
-              case "grayscale":
-                initialFilterString = `grayscale(${initialFilterValue}%)`;
-                break;
-              case "hue-rotate":
-                initialFilterString = `hue-rotate(${initialFilterValue}deg)`;
-                break;
-              case "invert":
-                initialFilterString = `invert(${initialFilterValue}%)`;
-                break;
-              case "opacity":
-                initialFilterString = `opacity(${initialFilterValue}%)`;
-                break;
-              case "saturate":
-                initialFilterString = `saturate(${initialFilterValue}%)`;
-                break;
-              case "sepia":
-                initialFilterString = `sepia(${initialFilterValue}%)`;
-                break;
-            }
-
-            fromProps.push(`filter: "${initialFilterString}"`);
-          }
-          break;
-      }
+    lines.push(`// Layer: ${target.name} (${target.selector})`);
+    const steps = buildTweenSteps(
+      layerKeyframes,
+      model.initialStates?.[target.id]
+    );
+    tweenStepsToCodeLines(target, steps).forEach((line) => {
+      lines.push(line);
     });
-
-    const propsString =
-      transformProps.length > 0
-        ? `{ ${transformProps.join(", ")}, duration: ${
-            keyframe.duration / 1000
-          }, ease: "${keyframe.easing}" }`
-        : `{ duration: ${keyframe.duration / 1000}, ease: "${
-            keyframe.easing
-          }" }`;
-
-    // Use .fromTo() for first keyframe if Initial State exists and has matching transforms
-    if (isFirstKeyframe && hasInitialState && fromProps.length > 0) {
-      const fromPropsString = `{ ${fromProps.join(", ")} }`;
-      lines.push(`tl.fromTo(".target", ${fromPropsString}, ${propsString}, ${keyframe.delay});`);
-    } else {
-      lines.push(`tl.to(".target", ${propsString}, ${keyframe.delay});`);
-    }
+    lines.push("");
   });
 
-  if (timeline.playbackType === "scroll") {
+  if (isScroll) {
     lines.push("");
-    lines.push("// Add ScrollTrigger");
-    lines.push("ScrollTrigger.create({");
-    lines.push("  animation: tl,");
-    lines.push('  trigger: ".trigger-element",');
-    lines.push(`  start: "top center",`);
-    lines.push(`  end: "${timeline.scrollLength || 300}% center",`);
-    lines.push("  scrub: true");
-    lines.push("});");
+    lines.push(`// Sostituisci ${SCROLL_TRIGGER_SELECTOR} con il tuo trigger`);
+    lines.push("// Aggiungi scroller: \"#id\" in scrollTrigger se non usi la viewport");
+  }
+
+  if (needsDraggable) {
+    lines.push("");
+    draggableSetupCodeLines(model).forEach((line) => lines.push(line));
   }
 
   return lines.join("\n");

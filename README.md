@@ -18,11 +18,27 @@ Create, edit, preview, and share GSAP animations with ease. This open-source app
   - Opacity
   - CSS Filters (Blur, Brightness, etc.)
 - **Live Preview**: Instantly see your animations come to life in the preview pane.
-- **Customizable Target Object**: Choose from basic shapes or a library of over 50 icons to animate.
+- **Layers**: Multiple targets per timeline (shape, text, image) with CSS selectors for export.
+- **Customizable preview objects**: Shapes, editable text, and image URLs per layer.
+- **Scroll-triggered timelines**: Scroll mode with scrub preview and ScrollTrigger code export.
 - **Playback Controls**: Play, pause, loop, and yo-yo your animations.
 - **Zoomable Timeline**: Zoom in for precise edits or zoom out for a full overview.
 - **Import/Export**: Save your work as a JSON file and load it back in later.
 - **Code Generation**: Export your timeline as ready-to-use GSAP code.
+
+## Internal deployment (team tool)
+
+- **Desktop only**: layout requires `lg` breakpoint (see app shell).
+- **Persistence**: timelines are stored in browser `localStorage`. Use **Export My Timelines** (JSON) regularly as backup.
+- **Exported GSAP code**: targets `.target` (tween target) and `.your-trigger` (ScrollTrigger). Replace selectors in your project.
+- **Scroll preview markers**: set `NEXT_PUBLIC_SHOW_SCROLL_MARKERS=true` for QA (development shows markers by default).
+- **Scripts**: `npm run dev` | `npm run build` | `npm run start` | `npm run test` (unit tests for tween building).
+
+### Known limits (v1)
+
+- Multiple layers per timeline; no free-form DOM/HTML blocks in preview.
+- No stagger, nested timelines, or multi-track editing.
+- Scroll mode uses the preview scroll area; timeline Play/Pause are disabled in scroll mode.
 
 ## 🤝 Contributing
 

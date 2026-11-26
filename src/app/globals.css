@@ -64,3 +64,27 @@
 .text-xxs {
   font-size: 0.5rem !important;
 }
+
+.model3d-viewport {
+  flex-shrink: 0;
+}
+
+.model3d-viewport .model3d-canvas-host canvas {
+  display: block;
+  width: var(--model3d-view-w, 500px) !important;
+  height: var(--model3d-view-h, 500px) !important;
+  max-width: none !important;
+  max-height: none !important;
+}
+
+@layer utilities {
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+}

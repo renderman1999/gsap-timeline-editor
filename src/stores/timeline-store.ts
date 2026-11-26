@@ -1,14 +1,30 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import {
+  createAnimationTarget,
+  normalizeTimeline,
+  normalizeTimelines,
+} from "@/lib/timeline-migrate";
+import type { TargetDraggableConfig } from "@/lib/gsap-draggable";
 import { roundDelay, roundDuration } from "@/utils/round";
+import type { Model3dSceneSettings } from "@/lib/model3d-scene";
+import type { Model3dInteractionConfig } from "@/lib/model3d-interaction";
 
 export type TransformType =
   | "move"
   | "rotate"
+  | "rotateX"
+  | "rotateY"
+  | "moveZ"
   | "opacity"
   | "skew"
   | "filter"
-  | "scale";
+  | "scale"
+  | "drawSvg"
+  | "morphSvg"
+  | "motionPath"
+  | "cssVar"
+  | "cssRule";
 
 export interface Transform {
   id: string;
@@ -18,10 +34,80 @@ export interface Transform {
 
 export interface Keyframe {
   id: string;
+  targetId?: string;
   delay: number;
   duration: number;
   easing: string;
+  /** Secondi tra elementi spezzati (SplitText) */
+  stagger?: number;
   transforms: Transform[];
+}
+
+export type TextSplitMode = "none" | "chars" | "words" | "lines";
+
+export type AnimationTargetType =
+  | "shape"
+  | "text"
+  | "image"
+  | "svg"
+  | "model3d";
+
+export interface TargetLayerStyle {
+  color?: string;
+  backgroundColor?: string;
+  fontFamily?: string;
+  fontSize?: string;
+  fontWeight?: string;
+  lineHeight?: string;
+  letterSpacing?: string;
+  textAlign?: "left" | "center" | "right";
+  /** es. 0 4px 24px rgba(0,0,0,0.45) */
+  boxShadow?: string;
+  /** es. 0 2px 8px #000 */
+  textShadow?: string;
+  borderWidth?: string;
+  borderStyle?: string;
+  borderColor?: string;
+  borderRadius?: string;
+  outlineWidth?: string;
+  outlineStyle?: string;
+  outlineColor?: string;
+  outlineOffset?: string;
+  opacity?: string;
+  /** es. blur(4px) drop-shadow(...) */
+  filter?: string;
+  textStrokeWidth?: string;
+  textStrokeColor?: string;
+  customCss?: string;
+}
+
+export interface AnimationTarget {
+  id: string;
+  name: string;
+  type: AnimationTargetType;
+  selector: string;
+  shape?: TargetShape;
+  text?: string;
+  /** Spezza il testo per animare char / word / line (SplitText) */
+  textSplit?: TextSplitMode;
+  /** Selettore path SVG di default per MotionPath */
+  motionPathSelector?: string;
+  imageUrl?: string;
+  /** GLB/GLTF: data URL o URL remota */
+  model3dUrl?: string;
+  model3dScene?: Model3dSceneSettings;
+  /** Nomi mesh rilevati dopo il load (per UI materiali). */
+  model3dMeshNames?: string[];
+  model3dInteractions?: Model3dInteractionConfig;
+  /** Markup SVG inline (path, gruppi, ecc.) */
+  svgContent?: string;
+  /** Sotto-selettore per DrawSVG/MorphSVG, default path */
+  svgPathSelector?: string;
+  /** Trascina il layer in preview / export (Draggable) */
+  draggable?: TargetDraggableConfig;
+  /** In playback scroll: pin GSAP (blocca il layer mentre la timeline scrubba i transform) */
+  scrollPin?: boolean;
+  style?: TargetLayerStyle;
 }
 
 export interface Timeline {
@@ -29,9 +115,33 @@ export interface Timeline {
   name: string;
   playbackType: "normal" | "scroll";
   scrollLength?: number;
+  /** GSAP ScrollTrigger start, es. "top center" o "top 50%" */
+  scrollTriggerStart?: string;
+  /** GSAP ScrollTrigger end; se assente si usa +=scrollLength% */
+  scrollTriggerEnd?: string;
+  /** relative: end +=scrollLength%; absolute: scrollTriggerEnd come posizione */
+  scrollEndMode?: "relative" | "absolute";
   loop: boolean;
   yoyo: boolean;
+  /** Colore sfondo pagina (se non usi gradiente) */
+  previewBackground?: string;
+  /** Colore inizio gradiente (con alpha) */
+  previewGradientFrom?: string;
+  /** Colore fine gradiente (con alpha) */
+  previewGradientTo?: string;
+  /** Angolo gradiente in gradi */
+  previewGradientAngle?: number;
+  /** CSS gradiente precalcolato (export / legacy) */
+  previewBackgroundGradient?: string;
+  /** Classe del contenitore bounds (senza punto), es. stage-bounds */
+  boundsClass?: string;
+  /** Perspective CSS (px) sullo stage quando ci sono transform 3D; default 800 */
+  stagePerspective?: number;
   keyframes: Keyframe[];
+  targets: AnimationTarget[];
+  activeTargetId: string;
+  initialStates?: Record<string, Transform[]>;
+  /** @deprecated Legacy single-target fields */
   targetShape?: TargetShape;
   initialState?: Transform[];
 }
@@ -56,7 +166,7 @@ interface TimelineState {
   zoom: number;
 
   // Actions
-  addTimeline: (timeline: Omit<Timeline, "id">) => void;
+  addTimeline: (timeline: Partial<Omit<Timeline, "id">>) => void;
   updateTimeline: (id: string, updates: Partial<Timeline>) => void;
   deleteTimeline: (id: string) => void;
   setActiveTimeline: (id: string) => void;
@@ -69,8 +179,30 @@ interface TimelineState {
   ) => void;
   deleteKeyframe: (timelineId: string, keyframeId: string) => void;
 
-  setInitialState: (timelineId: string, initialState: Transform[]) => void;
-  clearInitialState: (timelineId: string) => void;
+  setInitialState: (timelineId: string, targetId: string, initialState: Transform[]) => void;
+  clearInitialState: (timelineId: string, targetId: string) => void;
+
+  addTarget: (
+    timelineId: string,
+    partial?: Partial<AnimationTarget>
+  ) => void;
+  updateTarget: (
+    timelineId: string,
+    targetId: string,
+    updates: Partial<AnimationTarget>
+  ) => void;
+  setExclusiveScrollPin: (
+    timelineId: string,
+    targetId: string,
+    enabled: boolean
+  ) => void;
+  removeTarget: (timelineId: string, targetId: string) => void;
+  moveTarget: (
+    timelineId: string,
+    targetId: string,
+    direction: "up" | "down"
+  ) => void;
+  setActiveTarget: (timelineId: string, targetId: string) => void;
 
   setTargetShape: (shape: TargetShape) => void;
   setPlaying: (playing: boolean) => void;
@@ -80,15 +212,19 @@ interface TimelineState {
   getActiveTimeline: () => Timeline | null;
   generateUniqueTimelineName: (baseName: string) => string;
   recreateDemo: () => void;
+  loadProject: (payload: {
+    timelines: Timeline[];
+    activeTimelineId: string | null;
+  }) => void;
 }
 
-const createDemoTimeline = (): Timeline => ({
+const createDemoTimelineRaw = () => ({
   id: "demo",
   name: "Demo Animation",
-  playbackType: "normal",
+  playbackType: "normal" as const,
   loop: true,
   yoyo: true,
-  targetShape: "heart",
+  targetShape: "heart" as const,
   keyframes: [
     {
       id: "heartbeat-1",
@@ -205,11 +341,39 @@ const createDemoTimeline = (): Timeline => ({
   ],
 });
 
+const createDemoTimeline = (): Timeline =>
+  normalizeTimeline(
+    createDemoTimelineRaw() as unknown as Parameters<typeof normalizeTimeline>[0]
+  );
+
+const defaultNewTimeline = (): Omit<Timeline, "id"> => {
+  const target = createAnimationTarget({ name: "Layer 1", type: "shape" });
+  return {
+    name: "New Animation",
+    playbackType: "normal",
+    loop: false,
+    yoyo: false,
+    previewBackground: "#0a0a0a",
+    boundsClass: "stage-bounds",
+    keyframes: [],
+    targets: [target],
+    activeTargetId: target.id,
+    initialStates: {},
+  };
+};
+
+const INITIAL_TIMELINE_ID = "initial";
+
 export const useTimelineStore = create<TimelineState>()(
   persist(
     (set, get) => ({
-      timelines: [createDemoTimeline()],
-      activeTimelineId: "demo",
+      timelines: [
+        normalizeTimeline({
+          ...defaultNewTimeline(),
+          id: INITIAL_TIMELINE_ID,
+        }),
+      ],
+      activeTimelineId: INITIAL_TIMELINE_ID,
       targetShape: "heart",
       isPlaying: false,
       currentTime: 0,
@@ -217,11 +381,11 @@ export const useTimelineStore = create<TimelineState>()(
 
       addTimeline: (timeline) => {
         const id = Math.random().toString(36).substr(2, 9);
-        const newTimeline = {
+        const newTimeline = normalizeTimeline({
+          ...defaultNewTimeline(),
           ...timeline,
           id,
-          targetShape: timeline.targetShape || "square",
-        };
+        });
         set((state) => ({
           timelines: [...state.timelines, newTimeline],
           activeTimelineId: id,
@@ -264,6 +428,9 @@ export const useTimelineStore = create<TimelineState>()(
           id,
           delay: roundDelay(keyframe.delay),
           duration: roundDuration(keyframe.duration),
+          ...(keyframe.stagger != null && keyframe.stagger > 0
+            ? { stagger: roundDelay(keyframe.stagger) }
+            : {}),
         };
 
         set((state) => ({
@@ -284,6 +451,9 @@ export const useTimelineStore = create<TimelineState>()(
         if (updates.duration !== undefined) {
           roundedUpdates.duration = roundDuration(updates.duration);
         }
+        if (updates.stagger !== undefined) {
+          roundedUpdates.stagger = roundDelay(updates.stagger);
+        }
 
         set((state) => ({
           timelines: state.timelines.map((timeline) =>
@@ -292,7 +462,7 @@ export const useTimelineStore = create<TimelineState>()(
                   ...timeline,
                   keyframes: timeline.keyframes.map((keyframe) =>
                     keyframe.id === keyframeId
-                      ? { ...keyframe, ...updates }
+                      ? { ...keyframe, ...roundedUpdates }
                       : keyframe
                   ),
                 }
@@ -316,21 +486,135 @@ export const useTimelineStore = create<TimelineState>()(
         }));
       },
 
-      setInitialState: (timelineId, initialState) => {
+      setInitialState: (timelineId, targetId, initialState) => {
         set((state) => ({
           timelines: state.timelines.map((timeline) =>
             timeline.id === timelineId
-              ? { ...timeline, initialState }
+              ? {
+                  ...timeline,
+                  initialStates: {
+                    ...(timeline.initialStates ?? {}),
+                    [targetId]: initialState,
+                  },
+                }
               : timeline
           ),
         }));
       },
 
-      clearInitialState: (timelineId) => {
+      clearInitialState: (timelineId, targetId) => {
+        set((state) => ({
+          timelines: state.timelines.map((timeline) => {
+            if (timeline.id !== timelineId) return timeline;
+            const initialStates = { ...(timeline.initialStates ?? {}) };
+            delete initialStates[targetId];
+            return { ...timeline, initialStates };
+          }),
+        }));
+      },
+
+      addTarget: (timelineId, partial) => {
+        const timeline = get().timelines.find((t) => t.id === timelineId);
+        const layerIndex = (timeline?.targets?.length ?? 0) + 1;
+        const target = createAnimationTarget({
+          name: partial?.name ?? `Layer ${layerIndex}`,
+          ...partial,
+        });
         set((state) => ({
           timelines: state.timelines.map((timeline) =>
             timeline.id === timelineId
-              ? { ...timeline, initialState: undefined }
+              ? {
+                  ...timeline,
+                  targets: [...(timeline.targets ?? []), target],
+                  activeTargetId: target.id,
+                }
+              : timeline
+          ),
+        }));
+      },
+
+      updateTarget: (timelineId, targetId, updates) => {
+        set((state) => ({
+          timelines: state.timelines.map((timeline) =>
+            timeline.id === timelineId
+              ? {
+                  ...timeline,
+                  targets: (timeline.targets ?? []).map((t) =>
+                    t.id === targetId ? { ...t, ...updates } : t
+                  ),
+                }
+              : timeline
+          ),
+        }));
+      },
+
+      setExclusiveScrollPin: (timelineId, targetId, enabled) => {
+        set((state) => ({
+          timelines: state.timelines.map((timeline) =>
+            timeline.id === timelineId
+              ? {
+                  ...timeline,
+                  targets: (timeline.targets ?? []).map((t) => ({
+                    ...t,
+                    scrollPin: enabled && t.id === targetId,
+                  })),
+                }
+              : timeline
+          ),
+        }));
+      },
+
+      moveTarget: (timelineId, targetId, direction) => {
+        set((state) => ({
+          timelines: state.timelines.map((timeline) => {
+            if (timeline.id !== timelineId) return timeline;
+            const targets = [...(timeline.targets ?? [])];
+            const idx = targets.findIndex((t) => t.id === targetId);
+            if (idx < 0) return timeline;
+            const swapWith = direction === "up" ? idx - 1 : idx + 1;
+            if (swapWith < 0 || swapWith >= targets.length) return timeline;
+            const next = [...targets];
+            [next[idx], next[swapWith]] = [next[swapWith], next[idx]];
+            return { ...timeline, targets: next };
+          }),
+        }));
+      },
+
+      removeTarget: (timelineId, targetId) => {
+        set((state) => ({
+          timelines: state.timelines.map((timeline) => {
+            if (timeline.id !== timelineId) return timeline;
+            const targets = (timeline.targets ?? []).filter(
+              (t) => t.id !== targetId
+            );
+            if (targets.length === 0) return timeline;
+
+            const initialStates = { ...(timeline.initialStates ?? {}) };
+            delete initialStates[targetId];
+
+            let activeTargetId = timeline.activeTargetId;
+            if (activeTargetId === targetId) {
+              activeTargetId = targets[0].id;
+            }
+
+            return {
+              ...timeline,
+              targets,
+              activeTargetId,
+              initialStates,
+              keyframes: timeline.keyframes.filter(
+                (k) => k.targetId !== targetId
+              ),
+            };
+          }),
+        }));
+      },
+
+      setActiveTarget: (timelineId, targetId) => {
+        set((state) => ({
+          timelines: state.timelines.map((timeline) =>
+            timeline.id === timelineId
+              ? { ...timeline, activeTargetId: targetId }
               : timeline
           ),
         }));
@@ -343,9 +627,12 @@ export const useTimelineStore = create<TimelineState>()(
 
       getActiveTimeline: () => {
         const state = get();
-        return (
-          state.timelines.find((t) => t.id === state.activeTimelineId) || null
+        const timeline = state.timelines.find(
+          (t) => t.id === state.activeTimelineId
         );
+        if (!timeline) return null;
+        if (timeline.targets?.length) return timeline;
+        return normalizeTimeline(timeline);
       },
 
       generateUniqueTimelineName: (baseName) => {
@@ -365,15 +652,42 @@ export const useTimelineStore = create<TimelineState>()(
       },
 
       recreateDemo: () => {
-        const demoTimeline = createDemoTimeline();
+        const demoTimeline = normalizeTimeline(createDemoTimeline());
         set((state) => ({
           timelines: [...state.timelines, demoTimeline],
           activeTimelineId: demoTimeline.id,
         }));
       },
+
+      loadProject: ({ timelines, activeTimelineId }) => {
+        const normalized = normalizeTimelines(timelines);
+        if (normalized.length === 0) return;
+
+        const nextActive =
+          activeTimelineId &&
+          normalized.some((t) => t.id === activeTimelineId)
+            ? activeTimelineId
+            : normalized[0].id;
+
+        set({
+          timelines: normalized,
+          activeTimelineId: nextActive,
+          isPlaying: false,
+          currentTime: 0,
+        });
+      },
     }),
     {
       name: "timeline-storage",
+      version: 2,
+      skipHydration: true,
+      migrate: (persistedState) => {
+        const state = persistedState as { timelines?: Timeline[] };
+        if (state.timelines) {
+          state.timelines = normalizeTimelines(state.timelines);
+        }
+        return persistedState;
+      },
     }
   )
 );

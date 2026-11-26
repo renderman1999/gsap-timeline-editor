@@ -19,6 +19,7 @@ import {
   type Keyframe,
   type Transform,
 } from "@/stores/timeline-store";
+import { normalizeTimeline } from "@/lib/timeline-migrate";
 
 export function TimelineEditor() {
   const {
@@ -34,17 +35,22 @@ export function TimelineEditor() {
     zoom,
     setZoom,
     recreateDemo,
+    getActiveTimeline,
+    setActiveTarget,
   } = useTimelineStore();
 
-  // Memoize active timeline with stable dependencies
   const activeTimeline = useMemo(() => {
-    return timelines.find((t) => t.id === activeTimelineId) || null;
+    const raw = timelines.find((t) => t.id === activeTimelineId);
+    if (!raw) return null;
+    if (raw.targets?.length) return raw;
+    return normalizeTimeline(raw);
   }, [timelines, activeTimelineId]);
 
   const [isKeyframeDialogOpen, setIsKeyframeDialogOpen] = useState(false);
   const [editingKeyframe, setEditingKeyframe] = useState<Keyframe | null>(null);
   const [dialogMode, setDialogMode] = useState<"add" | "edit">("add");
   const [initialKeyframeData, setInitialKeyframeData] = useState({
+    targetId: "",
     delay: 0,
     duration: 1000,
     easing: "power2.inOut",
@@ -53,6 +59,9 @@ export function TimelineEditor() {
 
   const [isInitialStateDialogOpen, setIsInitialStateDialogOpen] =
     useState(false);
+  const [initialStateTargetId, setInitialStateTargetId] = useState<
+    string | null
+  >(null);
 
   // Drag and resize state
   const [dragOperation, setDragOperation] = useState<{
@@ -63,10 +72,13 @@ export function TimelineEditor() {
     startDuration: number;
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isPlayheadDragging, setIsPlayheadDragging] = useState(false);
   const [didDrag, setDidDrag] = useState(false);
 
-  const timelineRef = useRef<HTMLDivElement>(null);
-  // activeTimeline is now memoized above
+  const trackRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const timelineVerticalRef = useRef<HTMLDivElement>(null);
+  const safeTotalDurationRef = useRef(0.001);
 
   // Memoize expensive calculations early to use in event handlers
   const getLastKeyframeEndMemo = useCallback(() => {
@@ -85,34 +97,163 @@ export function TimelineEditor() {
     [getLastKeyframeEndMemo]
   );
 
+  const safeTotalDuration = Math.max(totalDuration, 0.001);
+  safeTotalDurationRef.current = safeTotalDuration;
+
   const timeMarkers = useMemo(() => {
-    return Array.from({ length: Math.ceil(totalDuration) + 1 }, (_, i) => i);
-  }, [totalDuration]);
+    return Array.from(
+      { length: Math.ceil(safeTotalDuration) + 1 },
+      (_, i) => i
+    );
+  }, [safeTotalDuration]);
 
-  const timelineWidth = useMemo(() => {
-    return totalDuration * 100 * zoom;
-  }, [totalDuration, zoom]);
+  const contentTimelineWidth = useMemo(() => {
+    return safeTotalDuration * 100 * zoom;
+  }, [safeTotalDuration, zoom]);
 
-  // Handle mouse events for drag and resize
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent, keyframe: Keyframe, type: "move" | "resize") => {
+  const timelineWidth = useMemo(
+    () => Math.max(contentTimelineWidth, 240),
+    [contentTimelineWidth]
+  );
+
+  useEffect(() => {
+    const vertical = timelineVerticalRef.current;
+    if (!vertical) return;
+
+    const onWheel = (e: WheelEvent) => {
+      const horizontal = scrollViewportRef.current;
+      const canScrollVert =
+        vertical.scrollHeight > vertical.clientHeight + 1;
+      const canScrollHor =
+        !!horizontal &&
+        horizontal.scrollWidth > horizontal.clientWidth + 1;
+
+      const absX = Math.abs(e.deltaX);
+      const absY = Math.abs(e.deltaY);
+
+      if (e.shiftKey && canScrollHor && horizontal) {
+        e.preventDefault();
+        horizontal.scrollLeft += e.deltaY;
+        return;
+      }
+
+      if (canScrollVert && absY >= absX && absY > 0) {
+        e.preventDefault();
+        vertical.scrollTop += e.deltaY;
+        return;
+      }
+
+      if (canScrollHor && horizontal && absX > absY && absX > 0) {
+        e.preventDefault();
+        horizontal.scrollLeft += e.deltaX;
+      }
+    };
+
+    vertical.addEventListener("wheel", onWheel, { passive: false });
+    return () => vertical.removeEventListener("wheel", onWheel);
+  }, [activeTimelineId]);
+
+  const resolvePlayheadTrack = useCallback((): HTMLDivElement | null => {
+    if (!activeTimeline) return null;
+    const activeTrack = trackRefs.current.get(activeTimeline.activeTargetId);
+    if (activeTrack) return activeTrack;
+    const first = trackRefs.current.values().next().value;
+    return first ?? null;
+  }, [activeTimeline]);
+
+  const updatePlayheadFromClientX = useCallback(
+    (clientX: number) => {
+      const trackEl = resolvePlayheadTrack();
+      if (!trackEl) return;
+
+      const rect = trackEl.getBoundingClientRect();
+      const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+      const nextTime = (x / rect.width) * safeTotalDuration;
+      const snapped = snapToGrid(nextTime, 0.05, true);
+      setCurrentTime(Math.max(0, Math.min(safeTotalDuration, snapped)));
+    },
+    [resolvePlayheadTrack, safeTotalDuration, setCurrentTime]
+  );
+
+  const handlePlayheadMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setPlaying(false);
+      setIsPlayheadDragging(true);
+      updatePlayheadFromClientX(e.clientX);
+    },
+    [setPlaying, updatePlayheadFromClientX]
+  );
+
+  const handleKeyframeDragStart = useCallback(
+    (
+      e: React.MouseEvent,
+      keyframe: Keyframe,
+      type: "move" | "resize",
+      trackId: string
+    ) => {
+      e.preventDefault();
       e.stopPropagation();
 
-      if (!timelineRef.current || !activeTimeline) return;
+      const timeline = getActiveTimeline();
+      if (!timeline) return;
+      const trackEl = trackRefs.current.get(trackId);
+      if (!trackEl) return;
 
-      const rect = timelineRef.current.getBoundingClientRect();
-      const startX = e.clientX - rect.left;
+      const timelineId = timeline.id;
+      const keyframeId = keyframe.id;
+      const startClientX = e.clientX;
+      const startDelay = keyframe.delay;
+      const startDuration = keyframe.duration;
+      const minStepMs = 50;
 
       setDragOperation({
         type,
-        keyframeId: keyframe.id,
-        startX,
-        startDelay: keyframe.delay,
-        startDuration: keyframe.duration,
+        keyframeId,
+        startX: startClientX,
+        startDelay,
+        startDuration,
       });
       setIsDragging(true);
+
+      const onMove = (ev: MouseEvent) => {
+        const track = trackRefs.current.get(trackId);
+        if (!track) return;
+        const rect = track.getBoundingClientRect();
+        const total = safeTotalDurationRef.current;
+        if (total <= 0) return;
+        const pixelsPerSecond = rect.width / total;
+        const timeDelta = (ev.clientX - startClientX) / pixelsPerSecond;
+
+        setDidDrag(true);
+
+        if (type === "move") {
+          const rawNewDelay = Math.max(0, startDelay + timeDelta);
+          const newDelay = snapToGrid(rawNewDelay, minStepMs / 1000, true);
+          updateKeyframe(timelineId, keyframeId, { delay: newDelay });
+        } else {
+          const rawNewDuration = Math.max(
+            minStepMs,
+            startDuration + timeDelta * 1000
+          );
+          const newDuration = snapToGrid(rawNewDuration, minStepMs, false);
+          updateKeyframe(timelineId, keyframeId, { duration: newDuration });
+        }
+      };
+
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        setDragOperation(null);
+        setIsDragging(false);
+        setTimeout(() => setDidDrag(false), 0);
+      };
+
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
     },
-    [activeTimeline]
+    [getActiveTimeline, updateKeyframe]
   );
 
   // Helper function to snap value to grid with minimum step size
@@ -134,81 +275,34 @@ export function TimelineEditor() {
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
-      if (
-        !isDragging ||
-        !dragOperation ||
-        !timelineRef.current ||
-        !activeTimeline
-      ) {
-        return;
-      }
-
-      const rect = timelineRef.current.getBoundingClientRect();
-      const currentX = e.clientX - rect.left;
-      const deltaX = currentX - dragOperation.startX;
-
-      // Convert pixel delta to time delta based on zoom level and total duration
-      const pixelsPerSecond = rect.width / totalDuration;
-      const timeDelta = deltaX / pixelsPerSecond;
-
-      const keyframe = activeTimeline.keyframes.find(
-        (k) => k.id === dragOperation.keyframeId
-      );
-      if (!keyframe) return;
-
-      setDidDrag(true);
-
-      // Minimum step size in milliseconds
-      const minStepMs = 50;
-
-      if (dragOperation.type === "move") {
-        // Update delay (position) with snapping
-        const rawNewDelay = Math.max(0, dragOperation.startDelay + timeDelta);
-        // Snap to grid with minimum step of 50ms (0.05s)
-        const newDelay = snapToGrid(rawNewDelay, minStepMs / 1000, true);
-        updateKeyframe(activeTimeline.id, keyframe.id, { delay: newDelay });
-      } else if (dragOperation.type === "resize") {
-        // Update duration with snapping
-        const rawNewDuration = Math.max(
-          minStepMs,
-          dragOperation.startDuration + timeDelta * 1000
-        );
-        // Snap to grid with minimum step of 50ms
-        const newDuration = snapToGrid(rawNewDuration, minStepMs, false);
-        updateKeyframe(activeTimeline.id, keyframe.id, {
-          duration: newDuration,
-        });
-      }
+      if (!isPlayheadDragging) return;
+      updatePlayheadFromClientX(e.clientX);
     },
-    [isDragging, dragOperation, activeTimeline, totalDuration, updateKeyframe]
+    [isPlayheadDragging, updatePlayheadFromClientX]
   );
 
   const handleMouseUp = useCallback(() => {
-    setDragOperation(null);
-    setIsDragging(false);
-    // Reset didDrag after a short delay to allow the click event to be suppressed
-    setTimeout(() => setDidDrag(false), 0);
+    setIsPlayheadDragging(false);
   }, []);
 
-  // Add and remove event listeners
   useEffect(() => {
-    if (isDragging) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-    }
-
+    if (!isPlayheadDragging) return;
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging, handleMouseMove, handleMouseUp]);
+  }, [isPlayheadDragging, handleMouseMove, handleMouseUp]);
 
   // getLastKeyframeEnd is now memoized as getLastKeyframeEndMemo above
 
   const handleSaveKeyframe = (keyframeData: {
+    targetId: string;
     delay: number;
     duration: number;
     easing: string;
+    stagger?: number;
     transforms: Transform[];
   }) => {
     if (!activeTimeline) return;
@@ -233,15 +327,18 @@ export function TimelineEditor() {
     if (!activeTimeline) return;
 
     // Calculate delay to place new keyframe after the last existing keyframe
+    const layerKeyframes = activeTimeline.keyframes.filter(
+      (k) => k.targetId === activeTimeline.activeTargetId
+    );
     const lastKeyframeEnd =
-      activeTimeline.keyframes.length > 0
+      layerKeyframes.length > 0
         ? Math.max(
-            ...activeTimeline.keyframes.map((k) => k.delay + k.duration / 1000)
+            ...layerKeyframes.map((k) => k.delay + k.duration / 1000)
           )
         : 0;
 
-    // Set initial data for new keyframe
     setInitialKeyframeData({
+      targetId: activeTimeline.activeTargetId,
       delay: lastKeyframeEnd,
       duration: 1000,
       easing: "power2.inOut",
@@ -258,9 +355,11 @@ export function TimelineEditor() {
     setIsKeyframeDialogOpen(false);
   };
 
+  const isScrollPlayback = activeTimeline?.playbackType === "scroll";
+
   if (!activeTimeline) {
     return (
-      <div className="text-center flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4">
+      <div className="text-center flex-1 min-h-0 px-4 py-8 flex flex-col items-center justify-center text-muted-foreground gap-4">
         <div>
           There are no timelines to edit. <br />
           Create a new one or import an existing one to get started.
@@ -273,60 +372,72 @@ export function TimelineEditor() {
   }
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex flex-col flex-1 min-h-0 w-full min-w-0 bg-card">
       {/* Controls */}
-      <div className="border-b border-border p-4">
-        <div className="flex justify-between items-center gap-4 max-w-[700px] mx-auto w-full">
+      <div className="shrink-0 border-b border-border px-2 py-2 w-full">
+        <div className="flex justify-between items-center gap-4 w-full">
           <div className="flex items-center gap-2">
             <Button
               size="sm"
               variant="outline"
+              title="Zoom out timeline"
               onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
             >
               <ZoomOut className="h-4 w-4" />
             </Button>
-            <span className="text-sm text-muted-foreground">
+            <span
+              className="text-sm text-muted-foreground tabular-nums min-w-[3rem] text-center"
+              title="Larghezza timeline (100px ≈ 1s a zoom 100%)"
+            >
               {Math.round(zoom * 100)}%
             </span>
             <Button
               size="sm"
               variant="outline"
+              title="Zoom in timeline"
               onClick={() => setZoom(Math.min(3, zoom + 0.25))}
             >
               <ZoomIn className="h-4 w-4" />
             </Button>
           </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant={isPlaying ? "outline" : "default"}
-              onClick={() => setPlaying(!isPlaying)}
-            >
-              {isPlaying ? (
-                <>
-                  <Pause className="h-4 w-4" />
-                  Pause
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4" />
-                  Play
-                </>
-              )}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setPlaying(false);
-                setCurrentTime(0);
-              }}
-            >
+          <div className="flex gap-2 items-center">
+            {isScrollPlayback ? (
+              <span className="text-xs text-muted-foreground max-w-[140px]">
+              </span>
+            ) : (
               <>
-                <Square className="h-4 w-4" />
-                Stop
+                <Button
+                  size="sm"
+                  variant={isPlaying ? "outline" : "default"}
+                  onClick={() => setPlaying(!isPlaying)}
+                >
+                  {isPlaying ? (
+                    <>
+                      <Pause className="h-4 w-4" />
+                      Pause
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4" />
+                      Play
+                    </>
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setPlaying(false);
+                    setCurrentTime(0);
+                  }}
+                >
+                  <>
+                    <Square className="h-4 w-4" />
+                    Stop
+                  </>
+                </Button>
               </>
-            </Button>
+            )}
           </div>
 
           <Button size="sm" className="gap-2" onClick={handleAddKeyframe}>
@@ -349,216 +460,244 @@ export function TimelineEditor() {
               ) + 1
             : undefined
         }
+        targets={activeTimeline.targets}
         initialData={dialogMode === "add" ? initialKeyframeData : undefined}
         onSave={handleSaveKeyframe}
         onCancel={handleDialogCancel}
       />
 
       {/* Timeline */}
-      <div className="flex-1 p-4">
-        {/* Fixed width container */}
-        <div className="relative bg-muted/20 rounded-lg p-4 min-h-32 w-[700px] mx-auto">
-          {/* Scrollable container with time markers */}
-          <div className="overflow-x-auto">
-            {/* Time markers container - positioned above timeline, scrolls with content */}
+      <div
+        ref={timelineVerticalRef}
+        className="flex-1 min-h-0 px-4 pt-2 pb-0 w-full min-w-0 overflow-y-auto scrollbar-none"
+      >
+        <div className="relative bg-muted/20 rounded-t-lg p-4 pb-3 min-h-32 w-full">
+          <div ref={scrollViewportRef} className="w-full overflow-x-auto">
             <div
-              className="relative h-6 mb-2"
-              style={{ width: `${timelineWidth}px` }}
+              className="relative"
+              style={{ width: `${timelineWidth + 88}px` }}
             >
-              {timeMarkers.map((i) => (
-                <div
-                  key={i}
-                  className="absolute top-0 h-6"
-                  style={{ left: `${(i / totalDuration) * 100}%` }}
-                >
-                  <span className="absolute top-0 text-xs text-muted-foreground">
-                    {i}s
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {/* Initial State */}
-            {activeTimeline.initialState && (
               <div
-                className="absolute top-2 bottom-2 bg-blue-500/20 rounded hover:bg-blue-500/30 group cursor-pointer border-2 border-blue-500/40"
-                style={{
-                  left: "-90px",
-                  width: "80px",
-                }}
-                onClick={() => setIsInitialStateDialogOpen(true)}
+                className="relative h-6 mb-2 ml-[88px]"
+                style={{ width: `${timelineWidth}px` }}
               >
-                <div className="p-2 h-full flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-blue-700">
-                      Initial State
-                    </span>
-                  </div>
-                  <div className="flex items-center mt-1">
-                    <span className="text-xxs text-blue-600 font-medium bg-blue-500/10 px-1 rounded">
-                      {activeTimeline.initialState.length} transforms
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Add Initial State Button */}
-            {!activeTimeline.initialState && (
-              <div
-                className="absolute top-2 bottom-2 bg-transparent rounded hover:bg-primary/5 group cursor-pointer border-2 border-dashed border-primary/60"
-                style={{
-                  left: "-90px",
-                  width: "80px",
-                }}
-                onClick={() => setIsInitialStateDialogOpen(true)}
-              >
-                <div className="p-2 h-full flex flex-col justify-center items-center">
-                  <Plus className="h-4 w-4 text-primary mb-1" />
-                  <span className="text-xs text-primary font-medium text-center">
-                    Initial State
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Timeline content that can expand beyond container */}
-            <div
-              ref={timelineRef}
-              className="relative h-16 bg-card rounded border"
-              style={{ width: `${timelineWidth}px` }}
-            >
-              {/* Time markers lines only */}
-              <div className="absolute inset-0">
                 {timeMarkers.map((i) => (
                   <div
                     key={i}
-                    className="absolute top-0 bottom-0 border-l border-border/50"
-                    style={{ left: `${(i / totalDuration) * 100}%` }}
-                  />
+                    className="absolute top-0 h-6"
+                    style={{ left: `${(i / safeTotalDuration) * 100}%` }}
+                  >
+                    <span className="absolute top-0 text-xs text-muted-foreground">
+                      {i}s
+                    </span>
+                  </div>
                 ))}
               </div>
 
-              {/* Current time indicator */}
-              <div
-                className="absolute top-0 bottom-0 w-0.5 bg-primary z-10"
-                style={{ left: `${(currentTime / totalDuration) * 100}%` }}
-              />
+              {activeTimeline.targets.map((target) => {
+                const layerInitial =
+                  activeTimeline.initialStates?.[target.id];
+                const layerKeyframes = activeTimeline.keyframes.filter(
+                  (k) => k.targetId === target.id
+                );
+                const isActiveLayer =
+                  target.id === activeTimeline.activeTargetId;
 
-              {/* Keyframes */}
-              {activeTimeline.keyframes.map((keyframe) => (
-                <div
-                  key={keyframe.id}
-                  className={`absolute top-2 bottom-2 bg-primary/20 rounded hover:bg-primary/30 hover:z-20 group ${
-                    isDragging && dragOperation?.keyframeId === keyframe.id
-                      ? "opacity-70"
-                      : ""
-                  }`}
-                  style={{
-                    left: `${(keyframe.delay / totalDuration) * 100}%`,
-                    width: `${
-                      (keyframe.duration / 1000 / totalDuration) * 100
-                    }%`,
-                    cursor: isDragging
-                      ? dragOperation?.keyframeId === keyframe.id
-                        ? dragOperation?.type === "move"
-                          ? "grabbing"
-                          : "ew-resize"
-                        : "pointer"
-                      : "pointer",
-                  }}
-                >
-                  <div
-                    className="h-full bg-primary/20 border border-primary rounded-lg cursor-grab active:cursor-grabbing relative group"
-                    onMouseDown={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const rightEdgeThreshold = 10; // pixels from right edge to trigger resize
-
-                      if (e.clientX > rect.right - rightEdgeThreshold) {
-                        handleMouseDown(e, keyframe, "resize");
-                      } else {
-                        handleMouseDown(e, keyframe, "move");
-                      }
-                    }}
-                    onClick={() => {
-                      if (didDrag) return;
-                      handleEditKeyframe(keyframe);
-                    }}
-                  >
-                    <div className="absolute inset-0 flex flex-col p-1 overflow-hidden">
-                      <div className="flex justify-start items-center">
-                        <span
-                          className="text-xxs font-medium text-primary"
-                          suppressHydrationWarning
+                return (
+                  <div key={target.id} className="flex gap-2 mb-2 items-stretch">
+                    <div
+                      className={`w-20 shrink-0 flex flex-col gap-1 ${
+                        isActiveLayer ? "opacity-100" : "opacity-80"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        className="text-left text-xxs font-medium truncate text-primary hover:underline"
+                        onClick={() =>
+                          setActiveTarget(activeTimeline.id, target.id)
+                        }
+                        title="Layer attivo per nuovi keyframe"
+                      >
+                        {target.name}
+                      </button>
+                      {layerInitial?.length ? (
+                        <button
+                          type="button"
+                          className="h-14 w-full bg-blue-500/20 rounded hover:bg-blue-500/30 border border-blue-500/40 text-left cursor-pointer"
+                          onClick={() => {
+                            setInitialStateTargetId(target.id);
+                            setIsInitialStateDialogOpen(true);
+                          }}
                         >
-                          {keyframe.duration}ms / {keyframe.easing}
-                        </span>
-                      </div>
-                      <div className="flex items-center mt-1">
-                        <span
-                          className="text-xxs text-primary font-medium bg-primary/10 px-1 rounded"
-                          suppressHydrationWarning
+                          <div className="p-1.5 h-full flex flex-col justify-between">
+                            <span className="text-xxs font-medium text-blue-700">
+                              Initial
+                            </span>
+                            <span className="text-xxs text-blue-600">
+                              {layerInitial.length}
+                            </span>
+                          </div>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="h-14 w-full border border-dashed border-primary/50 rounded hover:bg-primary/5 cursor-pointer flex flex-col items-center justify-center"
+                          onClick={() => {
+                            setInitialStateTargetId(target.id);
+                            setIsInitialStateDialogOpen(true);
+                          }}
                         >
-                          {keyframe.transforms.length} transforms
-                        </span>
-                      </div>
+                          <Plus className="h-3 w-3 text-primary" />
+                          <span className="text-xxs text-primary">Initial</span>
+                        </button>
+                      )}
                     </div>
 
-                    {/* Resize handles */}
                     <div
-                      className="absolute top-0 bottom-0 left-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity"
-                      onMouseDown={(e) =>
-                        handleMouseDown(e, keyframe, "resize")
-                      }
-                    />
-                    <div
-                      className="absolute top-0 bottom-0 right-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity"
-                      onMouseDown={(e) =>
-                        handleMouseDown(e, keyframe, "resize")
-                      }
-                    />
-                    <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-5 w-5 text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (activeTimeline) {
-                            deleteKeyframe(activeTimeline.id, keyframe.id);
-                          }
-                        }}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                      ref={(el) => {
+                        if (el) trackRefs.current.set(target.id, el);
+                        else trackRefs.current.delete(target.id);
+                      }}
+                      className="relative h-16 bg-card rounded border flex-1"
+                      style={{ width: `${timelineWidth}px` }}
+                    >
+                      <div className="absolute inset-0 pointer-events-none">
+                        {timeMarkers.map((i) => (
+                          <div
+                            key={i}
+                            className="absolute top-0 bottom-0 border-l border-border/50"
+                            style={{
+                              left: `${(i / safeTotalDuration) * 100}%`,
+                            }}
+                          />
+                        ))}
+                      </div>
+
+                      {layerKeyframes.map((keyframe) => (
+                        <div
+                          key={keyframe.id}
+                          className={`absolute top-2 bottom-2 rounded z-20 pointer-events-auto group ${
+                            isDragging &&
+                            dragOperation?.keyframeId === keyframe.id
+                              ? "opacity-70"
+                              : ""
+                          }`}
+                          style={{
+                            left: `${(keyframe.delay / safeTotalDuration) * 100}%`,
+                            width: `${
+                              (keyframe.duration / 1000 / safeTotalDuration) *
+                              100
+                            }%`,
+                          }}
+                        >
+                          <div
+                            className="h-full bg-primary/20 border border-primary rounded-lg cursor-grab active:cursor-grabbing relative"
+                            onMouseDown={(e) => {
+                              const rect =
+                                e.currentTarget.getBoundingClientRect();
+                              const rightEdgeThreshold = 14;
+                              const mode =
+                                e.clientX > rect.right - rightEdgeThreshold
+                                  ? "resize"
+                                  : "move";
+                              handleKeyframeDragStart(
+                                e,
+                                keyframe,
+                                mode,
+                                target.id
+                              );
+                            }}
+                            onClick={() => {
+                              if (didDrag) return;
+                              handleEditKeyframe(keyframe);
+                            }}
+                          >
+                            <div
+                              className="absolute top-0 right-0 bottom-0 w-3.5 z-10 cursor-ew-resize rounded-r-md border-l border-primary/40 bg-primary/25 hover:bg-primary/40"
+                              title="Trascina per cambiare durata"
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                handleKeyframeDragStart(
+                                  e,
+                                  keyframe,
+                                  "resize",
+                                  target.id
+                                );
+                              }}
+                            />
+                            <div className="absolute inset-0 flex flex-col p-1 overflow-hidden pointer-events-none">
+                              <span
+                                className="text-xxs font-medium text-primary"
+                                suppressHydrationWarning
+                              >
+                                {keyframe.duration}ms / {keyframe.easing}
+                              </span>
+                              <span
+                                className="text-xxs text-primary bg-primary/10 px-1 rounded w-fit mt-1"
+                                suppressHydrationWarning
+                              >
+                                {keyframe.transforms.length} tr.
+                              </span>
+                            </div>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="absolute top-0 right-3.5 h-5 w-5 text-destructive opacity-0 group-hover:opacity-100 z-20"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteKeyframe(
+                                  activeTimeline.id,
+                                  keyframe.id
+                                );
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
+
+              <div
+                className="absolute top-0 bottom-0 z-10 pointer-events-none ml-[88px]"
+                style={{ width: `${timelineWidth}px` }}
+              >
+                <button
+                  type="button"
+                  aria-label="Trascina playhead"
+                  className="absolute top-0 bottom-0 -translate-x-1/2 w-3.5 cursor-ew-resize pointer-events-auto touch-none"
+                  style={{
+                    left: `${(currentTime / safeTotalDuration) * 100}%`,
+                  }}
+                  onMouseDown={handlePlayheadMouseDown}
+                >
+                  <span className="absolute left-1/2 top-0 bottom-0 w-0.5 -translate-x-1/2 bg-primary" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* KeyframeDialog */}
-      <KeyframeDialog
-        isOpen={isKeyframeDialogOpen}
-        onOpenChange={setIsKeyframeDialogOpen}
-        mode={dialogMode}
-        keyframe={editingKeyframe}
-        initialData={initialKeyframeData}
-        onSave={handleSaveKeyframe}
-        onCancel={handleDialogCancel}
-      />
-
-      {/* InitialStateDialog */}
-      {activeTimeline && (
+      {activeTimeline && initialStateTargetId ? (
         <InitialStateDialog
           isOpen={isInitialStateDialogOpen}
-          onOpenChange={setIsInitialStateDialogOpen}
+          onOpenChange={(open) => {
+            setIsInitialStateDialogOpen(open);
+            if (!open) setInitialStateTargetId(null);
+          }}
           timelineId={activeTimeline.id}
+          targetId={initialStateTargetId}
+          layerName={
+            activeTimeline.targets.find(
+              (t) => t.id === initialStateTargetId
+            )?.name
+          }
         />
-      )}
+      ) : null}
     </div>
   );
 }

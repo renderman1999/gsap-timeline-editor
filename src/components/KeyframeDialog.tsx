@@ -34,6 +34,24 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  CssRuleTransformFields,
+  CssVarTransformFields,
+} from "@/components/CssAdvancedTransformFields";
+import { MotionPathTransformFields } from "@/components/MotionPathTransformFields";
+import { SvgPluginTransformFields } from "@/components/SvgPluginTransformFields";
+import {
+  TransformDegreeField,
+  TransformZDepthField,
+} from "@/components/Css3dTransformFields";
+import {
+  CORE_TRANSFORM_OPTIONS,
+  CSS3D_TRANSFORM_OPTIONS,
+  SVG_TRANSFORM_OPTIONS,
+} from "@/constants/transform-options";
+import { defaultValuesForTransformType } from "@/lib/transform-defaults";
+import { isActiveTextSplit } from "@/lib/gsap-split-text";
+import {
+  type AnimationTarget,
   type Keyframe,
   type Transform,
   type TransformType,
@@ -45,16 +63,20 @@ interface KeyframeDialogProps {
   mode: "add" | "edit";
   keyframe?: Keyframe | null;
   keyframeNumber?: number;
+  targets: AnimationTarget[];
   initialData?: {
+    targetId: string;
     delay: number;
     duration: number;
     easing: string;
     transforms: Transform[];
   };
   onSave: (keyframeData: {
+    targetId: string;
     delay: number;
     duration: number;
     easing: string;
+    stagger?: number;
     transforms: Transform[];
   }) => void;
   onCancel: () => void;
@@ -67,13 +89,16 @@ export function KeyframeDialog({
   keyframe,
   keyframeNumber,
   initialData,
+  targets,
   onSave,
   onCancel,
 }: KeyframeDialogProps) {
   const [keyframeForm, setKeyframeForm] = useState({
+    targetId: targets[0]?.id ?? "",
     delay: 0,
     duration: 1000,
     easing: "power2.out",
+    stagger: undefined as number | undefined,
     transforms: [] as Transform[],
   });
 
@@ -89,9 +114,11 @@ export function KeyframeDialog({
       if (mode === "edit" && keyframe) {
         const { order, type } = parseEasing(keyframe.easing);
         setKeyframeForm({
+          targetId: keyframe.targetId ?? targets[0]?.id ?? "",
           delay: keyframe.delay,
           duration: keyframe.duration,
           easing: keyframe.easing,
+          stagger: keyframe.stagger,
           transforms: [...keyframe.transforms],
         });
         setEasingOrder(order);
@@ -99,9 +126,11 @@ export function KeyframeDialog({
       } else if (mode === "add" && initialData) {
         const { order, type } = parseEasing(initialData.easing);
         setKeyframeForm({
+          targetId: initialData.targetId,
           delay: initialData.delay,
           duration: initialData.duration,
           easing: initialData.easing,
+          stagger: undefined,
           transforms: [...initialData.transforms],
         });
         setEasingOrder(order);
@@ -112,9 +141,11 @@ export function KeyframeDialog({
 
   const resetForm = () => {
     setKeyframeForm({
+      targetId: targets[0]?.id ?? "",
       delay: 0,
       duration: 1000,
       easing: "power2.inOut",
+      stagger: undefined,
       transforms: [],
     });
   };
@@ -131,34 +162,19 @@ export function KeyframeDialog({
     const existingTransform = keyframeForm.transforms.find(
       (t) => t.type === type
     );
-    if (existingTransform) {
-      return; // Don't add duplicate transform types
+    if (
+      existingTransform &&
+      type !== "cssRule" &&
+      type !== "cssVar"
+    ) {
+      return;
     }
 
     const id = Math.random().toString(36).substr(2, 9);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let defaultValues: any = {};
-
-    switch (type) {
-      case "move":
-        defaultValues = { x: 0, y: 0 };
-        break;
-      case "scale":
-        defaultValues = { scaleX: 1, scaleY: 1 };
-        break;
-      case "rotate":
-        defaultValues = { rotation: 0 };
-        break;
-      case "opacity":
-        defaultValues = { opacity: 1 };
-        break;
-      case "skew":
-        defaultValues = { skewX: 0, skewY: 0 };
-        break;
-      case "filter":
-        defaultValues = { filter: "blur", value: 0 };
-        break;
-    }
+    const defaultValues = defaultValuesForTransformType(type, {
+      targetId: keyframeForm.targetId,
+      targets,
+    });
 
     const newTransform: Transform = {
       id,
@@ -192,8 +208,25 @@ export function KeyframeDialog({
     }));
   };
 
+  const selectedTarget =
+    targets.find((t) => t.id === keyframeForm.targetId) ?? targets[0];
+  const transformOptions = [
+    ...CORE_TRANSFORM_OPTIONS,
+    ...CSS3D_TRANSFORM_OPTIONS,
+    ...(selectedTarget?.type === "svg" ? SVG_TRANSFORM_OPTIONS : []),
+  ];
+
   const handleSave = () => {
-    onSave(keyframeForm);
+    const payload = { ...keyframeForm };
+  if (
+    !selectedTarget ||
+    !isActiveTextSplit(selectedTarget.textSplit) ||
+    payload.stagger == null ||
+    payload.stagger <= 0
+  ) {
+    delete payload.stagger;
+  }
+    onSave(payload);
     resetForm();
   };
 
@@ -278,21 +311,42 @@ export function KeyframeDialog({
         );
       case "rotate":
         return (
-          <div className="flex items-center gap-2 ml-3">
-            <Input
-              type="number"
-              value={transform.values.rotation as number}
-              min="-360"
-              max="360"
-              onChange={(e) =>
-                updateTransform(transform.id, {
-                  ...transform.values,
-                  rotation: parseFloat(e.target.value) || 0,
-                })
-              }
-            />
-            <span className="text-xs text-muted-foreground">deg</span>
-          </div>
+          <TransformDegreeField
+            label=""
+            value={transform.values.rotation as number}
+            onChange={(rotation) =>
+              updateTransform(transform.id, { ...transform.values, rotation })
+            }
+          />
+        );
+      case "rotateX":
+        return (
+          <TransformDegreeField
+            label="X"
+            value={transform.values.rotationX as number}
+            onChange={(rotationX) =>
+              updateTransform(transform.id, { ...transform.values, rotationX })
+            }
+          />
+        );
+      case "rotateY":
+        return (
+          <TransformDegreeField
+            label="Y"
+            value={transform.values.rotationY as number}
+            onChange={(rotationY) =>
+              updateTransform(transform.id, { ...transform.values, rotationY })
+            }
+          />
+        );
+      case "moveZ":
+        return (
+          <TransformZDepthField
+            value={transform.values.z as number}
+            onChange={(z) =>
+              updateTransform(transform.id, { ...transform.values, z })
+            }
+          />
         );
       case "opacity":
         return (
@@ -351,6 +405,37 @@ export function KeyframeDialog({
               <span className="text-xs text-muted-foreground">deg</span>
             </div>
           </div>
+        );
+      case "drawSvg":
+      case "morphSvg":
+        return (
+          <SvgPluginTransformFields
+            transform={transform}
+            onUpdate={(values) => updateTransform(transform.id, values)}
+          />
+        );
+      case "motionPath":
+        return (
+          <MotionPathTransformFields
+            transform={transform}
+            onUpdate={(values) => updateTransform(transform.id, values)}
+          />
+        );
+      case "cssVar":
+        return (
+          <CssVarTransformFields
+            transform={transform}
+            targetId={keyframeForm.targetId}
+            onUpdate={(values) => updateTransform(transform.id, values)}
+          />
+        );
+      case "cssRule":
+        return (
+          <CssRuleTransformFields
+            transform={transform}
+            targetId={keyframeForm.targetId}
+            onUpdate={(values) => updateTransform(transform.id, values)}
+          />
         );
       case "filter":
         return (
@@ -411,6 +496,26 @@ export function KeyframeDialog({
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <div className="space-y-6">
+          <div className="flex items-center gap-2">
+            <Label>Layer</Label>
+            <Select
+              value={keyframeForm.targetId}
+              onValueChange={(value) =>
+                setKeyframeForm((prev) => ({ ...prev, targetId: value }))
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {targets.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name} ({t.type})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
               <Label>Position, s:</Label>
@@ -446,6 +551,37 @@ export function KeyframeDialog({
                 }}
               />
             </div>
+            {selectedTarget &&
+            isActiveTextSplit(selectedTarget.textSplit) ? (
+              <div className="flex items-center gap-2">
+                <Label title="Ritardo tra char/word/line (secondi)">
+                  Stagger, s:
+                </Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0"
+                  className="max-w-[5rem]"
+                  value={keyframeForm.stagger ?? ""}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim();
+                    if (!raw) {
+                      setKeyframeForm((prev) => ({
+                        ...prev,
+                        stagger: undefined,
+                      }));
+                      return;
+                    }
+                    const value = parseDecimalInput(raw);
+                    setKeyframeForm((prev) => ({
+                      ...prev,
+                      stagger: value > 0 ? roundDelay(value) : undefined,
+                    }));
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-4">
@@ -509,14 +645,7 @@ export function KeyframeDialog({
                 </PopoverTrigger>
                 <PopoverContent className="w-40 p-1" align="end">
                   <div className="space-y-1">
-                    {[
-                      { value: "move", label: "Move" },
-                      { value: "scale", label: "Scale" },
-                      { value: "rotate", label: "Rotate" },
-                      { value: "opacity", label: "Opacity" },
-                      { value: "skew", label: "Skew" },
-                      { value: "filter", label: "Filter" },
-                    ].map(({ value, label }) => {
+                    {transformOptions.map(({ value, label }) => {
                       const isUsed = keyframeForm.transforms.some(
                         (t) => t.type === value
                       );

@@ -1,5 +1,21 @@
 import React, { useState, useEffect } from "react";
 import {
+  CssRuleTransformFields,
+  CssVarTransformFields,
+} from "@/components/CssAdvancedTransformFields";
+import { MotionPathTransformFields } from "@/components/MotionPathTransformFields";
+import { SvgPluginTransformFields } from "@/components/SvgPluginTransformFields";
+import {
+  TransformDegreeField,
+  TransformZDepthField,
+} from "@/components/Css3dTransformFields";
+import {
+  CORE_TRANSFORM_OPTIONS,
+  CSS3D_TRANSFORM_OPTIONS,
+  SVG_TRANSFORM_OPTIONS,
+} from "@/constants/transform-options";
+import { defaultValuesForTransformType } from "@/lib/transform-defaults";
+import {
   Transform,
   TransformType,
   useTimelineStore,
@@ -34,12 +50,16 @@ interface InitialStateDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   timelineId: string;
+  targetId: string;
+  layerName?: string;
 }
 
 export function InitialStateDialog({
   isOpen,
   onOpenChange,
   timelineId,
+  targetId,
+  layerName,
 }: InitialStateDialogProps) {
   const { getActiveTimeline, setInitialState, clearInitialState } =
     useTimelineStore();
@@ -58,51 +78,32 @@ export function InitialStateDialog({
     if (isOpen) {
       const timeline = getActiveTimeline();
       if (timeline) {
-        if (timeline.initialState) {
-          // Use existing initial state
-          setTransforms([...timeline.initialState]);
-        } else if (timeline.keyframes.length > 0) {
-          // Inherit from first keyframe
-          setTransforms([...timeline.keyframes[0].transforms]);
+        const stored = timeline.initialStates?.[targetId];
+        if (stored?.length) {
+          setTransforms(stored.map((t) => ({ ...t, values: { ...t.values } })));
         } else {
-          // Empty state
           setTransforms([]);
         }
       }
     }
-  }, [isOpen, timelineId, getActiveTimeline]);
+  }, [isOpen, timelineId, targetId, getActiveTimeline]);
 
   const handleAddTransform = (type: TransformType) => {
-    // Check if transform type already exists
     const existingTransform = transforms.find((t) => t.type === type);
-    if (existingTransform) {
-      return; // Don't add duplicate transform types
+    if (
+      existingTransform &&
+      type !== "cssRule" &&
+      type !== "cssVar"
+    ) {
+      return;
     }
 
     const id = Math.random().toString(36).substr(2, 9);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let defaultValues: any = {};
-
-    switch (type) {
-      case "move":
-        defaultValues = { x: 0, y: 0 };
-        break;
-      case "scale":
-        defaultValues = { scaleX: 1, scaleY: 1 };
-        break;
-      case "rotate":
-        defaultValues = { rotation: 0 };
-        break;
-      case "opacity":
-        defaultValues = { opacity: 1 };
-        break;
-      case "skew":
-        defaultValues = { skewX: 0, skewY: 0 };
-        break;
-      case "filter":
-        defaultValues = { filter: "blur", value: 0 };
-        break;
-    }
+    const timeline = getActiveTimeline();
+    const defaultValues = defaultValuesForTransformType(type, {
+      targetId,
+      targets: timeline?.targets,
+    });
 
     const newTransform: Transform = {
       id,
@@ -111,8 +112,6 @@ export function InitialStateDialog({
     };
 
     setTransforms((prev) => [...prev, newTransform]);
-
-    // Close the popover after adding transform
     setIsAddTransformOpen(false);
   };
 
@@ -205,21 +204,42 @@ export function InitialStateDialog({
         );
       case "rotate":
         return (
-          <div className="flex items-center gap-2 ml-3">
-            <Input
-              type="number"
-              value={transform.values.rotation as number}
-              min="-360"
-              max="360"
-              onChange={(e) =>
-                updateTransform(transform.id, {
-                  ...transform.values,
-                  rotation: parseDecimalInput(e.target.value) || 0,
-                })
-              }
-            />
-            <span className="text-xs text-muted-foreground">deg</span>
-          </div>
+          <TransformDegreeField
+            label=""
+            value={transform.values.rotation as number}
+            onChange={(rotation) =>
+              updateTransform(transform.id, { ...transform.values, rotation })
+            }
+          />
+        );
+      case "rotateX":
+        return (
+          <TransformDegreeField
+            label="X"
+            value={transform.values.rotationX as number}
+            onChange={(rotationX) =>
+              updateTransform(transform.id, { ...transform.values, rotationX })
+            }
+          />
+        );
+      case "rotateY":
+        return (
+          <TransformDegreeField
+            label="Y"
+            value={transform.values.rotationY as number}
+            onChange={(rotationY) =>
+              updateTransform(transform.id, { ...transform.values, rotationY })
+            }
+          />
+        );
+      case "moveZ":
+        return (
+          <TransformZDepthField
+            value={transform.values.z as number}
+            onChange={(z) =>
+              updateTransform(transform.id, { ...transform.values, z })
+            }
+          />
         );
       case "opacity":
         return (
@@ -321,13 +341,53 @@ export function InitialStateDialog({
             </div>
           </div>
         );
+      case "drawSvg":
+      case "morphSvg":
+        return (
+          <SvgPluginTransformFields
+            transform={transform}
+            onUpdate={(values) => updateTransform(transform.id, values)}
+          />
+        );
+      case "motionPath":
+        return (
+          <MotionPathTransformFields
+            transform={transform}
+            onUpdate={(values) => updateTransform(transform.id, values)}
+          />
+        );
+      case "cssVar":
+        return (
+          <CssVarTransformFields
+            transform={transform}
+            targetId={targetId}
+            onUpdate={(values) => updateTransform(transform.id, values)}
+          />
+        );
+      case "cssRule":
+        return (
+          <CssRuleTransformFields
+            transform={transform}
+            targetId={targetId}
+            onUpdate={(values) => updateTransform(transform.id, values)}
+          />
+        );
       default:
         return null;
     }
   };
 
+  const activeTarget = getActiveTimeline()?.targets.find(
+    (t) => t.id === targetId
+  );
+  const transformOptions = [
+    ...CORE_TRANSFORM_OPTIONS,
+    ...CSS3D_TRANSFORM_OPTIONS,
+    ...(activeTarget?.type === "svg" ? SVG_TRANSFORM_OPTIONS : []),
+  ];
+
   const handleSave = () => {
-    setInitialState(timelineId, transforms);
+    setInitialState(timelineId, targetId, transforms);
     onOpenChange(false);
   };
 
@@ -336,7 +396,7 @@ export function InitialStateDialog({
   };
 
   const handleClear = () => {
-    clearInitialState(timelineId);
+    clearInitialState(timelineId, targetId);
     onOpenChange(false);
   };
 
@@ -344,85 +404,81 @@ export function InitialStateDialog({
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[420px] max-h-[80vh]">
         <DialogHeader>
-          <DialogTitle>Initial State</DialogTitle>
+          <DialogTitle>
+            Initial State{layerName ? ` — ${layerName}` : ""}
+          </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6">
-          <Card className="px-4 py-2">
-            <div className="flex items-center justify-between mb-2">
-              <Label className="text-md font-bold">Transforms</Label>
-              <Popover
-                open={isAddTransformOpen}
-                onOpenChange={setIsAddTransformOpen}
-              >
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="justify-between gap-1">
-                    <Plus className="h-4 w-4" />
-                    Add Transform
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-40 p-1" align="end">
-                  <div className="space-y-1">
-                    {[
-                      { value: "move", label: "Move" },
-                      { value: "scale", label: "Scale" },
-                      { value: "rotate", label: "Rotate" },
-                      { value: "opacity", label: "Opacity" },
-                      { value: "skew", label: "Skew" },
-                      { value: "filter", label: "Filter" },
-                    ].map(({ value, label }) => {
-                      const isUsed = transforms.some((t) => t.type === value);
-                      return (
-                        <Button
-                          key={value}
-                          variant="ghost"
-                          size="sm"
-                          className={`w-full justify-start text-left ${
-                            isUsed ? "opacity-50 cursor-not-allowed" : ""
-                          }`}
-                          disabled={isUsed}
-                          onClick={() =>
-                            handleAddTransform(value as TransformType)
-                          }
-                        >
-                          {label} {isUsed ? "(added)" : ""}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            <div className="space-y-4 overflow-y-auto max-h-[20rem]">
-              {transforms.length === 0 && (
-                <p className="text-center text-xs mt-4 mb-6 text-muted-foreground">
-                  No transforms added yet. Add one to animate.
-                </p>
-              )}
-              {transforms.map((transform) => (
-                <div
-                  key={transform.id}
-                  className="flex items-center justify-start gap-2 mb-2"
-                >
-                  <span className="text-sm font-medium capitalize">
-                    {transform.type}
-                  </span>
-
-                  {renderTransformFields(transform)}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => removeTransform(transform.id)}
-                    className="ml-auto"
-                  >
-                    <Trash2 className="h-3 w-3 text-red-500" />
-                  </Button>
+        <Card className="px-4 py-2">
+          <div className="flex items-center justify-between mb-2">
+            <Label className="text-md font-bold">Transforms</Label>
+            <Popover
+              open={isAddTransformOpen}
+              onOpenChange={setIsAddTransformOpen}
+            >
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="justify-between gap-1">
+                  <Plus className="h-4 w-4" />
+                  Add Transform
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-40 p-1" align="end">
+                <div className="space-y-1">
+                  {transformOptions.map(({ value, label }) => {
+                    const isUsed =
+                      value !== "cssRule" &&
+                      value !== "cssVar" &&
+                      transforms.some((t) => t.type === value);
+                    return (
+                      <Button
+                        key={value}
+                        variant="ghost"
+                        size="sm"
+                        className={`w-full justify-start text-left ${
+                          isUsed ? "opacity-50 cursor-not-allowed" : ""
+                        }`}
+                        disabled={isUsed}
+                        onClick={() =>
+                          handleAddTransform(value as TransformType)
+                        }
+                      >
+                        {label} {isUsed ? "(added)" : ""}
+                      </Button>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
-          </Card>
-        </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          <div className="space-y-4 overflow-y-auto max-h-[20rem]">
+            {transforms.length === 0 && (
+              <p className="text-center text-xs mt-4 mb-6 text-muted-foreground">
+                No transforms added yet. Add one to animate.
+              </p>
+            )}
+            {transforms.map((transform) => (
+              <div
+                key={transform.id}
+                className="flex items-center justify-start gap-2 mb-2"
+              >
+                <span className="text-sm font-medium capitalize">
+                  {transform.type}
+                </span>
+
+                {renderTransformFields(transform)}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => removeTransform(transform.id)}
+                  className="ml-auto"
+                >
+                  <Trash2 className="h-3 w-3 text-red-500" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
 
         <DialogFooter>
           <div className="flex justify-between w-full">
