@@ -30,12 +30,14 @@ export function TimelineProjectsList() {
 
     addTimeline({
       name,
+      editorMode: timeline.editorMode,
       playbackType: timeline.playbackType,
       scrollLength:
         timeline.playbackType === "scroll" ? timeline.scrollLength : undefined,
       scrollTriggerStart: timeline.scrollTriggerStart,
       scrollTriggerEnd: timeline.scrollTriggerEnd,
       scrollEndMode: timeline.scrollEndMode,
+      scrollLayout: timeline.scrollLayout,
       loop: timeline.loop,
       yoyo: timeline.yoyo,
       previewBackground: timeline.previewBackground,

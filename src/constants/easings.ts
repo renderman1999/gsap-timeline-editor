@@ -30,7 +30,8 @@ export const parseEasing = (
 ): { order: string; type: string } => {
   if (easing === "none") return { order: "none", type: "out" };
 
-  const parts = easing.split(".");
+  const base = easing.replace(/\(.*\)$/, "");
+  const parts = base.split(".");
   if (parts.length === 2) {
     return { order: parts[0], type: parts[1] };
   }

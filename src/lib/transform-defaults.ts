@@ -54,6 +54,31 @@ export function defaultValuesForTransformType(
         property: "color",
         value: "#0ae448",
       };
+    case "autoAlpha":
+      return { autoAlpha: 0 };
+    case "transformOrigin":
+      return { transformOrigin: "50% 50%" };
+    case "svgOrigin":
+      return { svgOrigin: "0 0" };
+    case "cssProp":
+      return { property: "width", value: "200px" };
+    case "scrambleText":
+      return { text: "Nuovo testo", chars: "upperCase", revealDelay: 0, speed: 0.5 };
+    case "physics2D":
+      return {
+        velocity: 300,
+        angle: -60,
+        gravity: 500,
+        acceleration: 0,
+        accelerationAngle: 0,
+        friction: 0,
+      };
+    case "physicsProps":
+      return { property: "x", velocity: 200, acceleration: 0, friction: 0 };
+    case "scrollTo":
+      return { scrollTarget: "window", y: 400, x: "", offsetX: 0, offsetY: 0 };
+    case "flip":
+      return { absolute: 0, nested: 0, scale: 1, simple: 0, toggleClass: "" };
     default:
       return {};
   }

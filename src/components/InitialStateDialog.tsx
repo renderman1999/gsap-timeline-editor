@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useDeferredValue } from "react";
 import {
   CssRuleTransformFields,
   CssVarTransformFields,
@@ -9,11 +9,14 @@ import {
   TransformDegreeField,
   TransformZDepthField,
 } from "@/components/Css3dTransformFields";
+import { ExtraTransformFields } from "@/components/ExtraTransformFields";
 import {
   CORE_TRANSFORM_OPTIONS,
   CSS3D_TRANSFORM_OPTIONS,
   SVG_TRANSFORM_OPTIONS,
+  transformAllowsMultiple,
 } from "@/constants/transform-options";
+import { cloneTransformsForPreview } from "@/lib/initial-state-preview";
 import { defaultValuesForTransformType } from "@/lib/transform-defaults";
 import {
   Transform,
@@ -40,7 +43,7 @@ import {
 } from "@/components/ui/popover";
 import {
   Dialog,
-  DialogContent,
+  DialogContentSidebar,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -61,9 +64,14 @@ export function InitialStateDialog({
   targetId,
   layerName,
 }: InitialStateDialogProps) {
-  const { getActiveTimeline, setInitialState, clearInitialState } =
-    useTimelineStore();
+  const {
+    getActiveTimeline,
+    setInitialState,
+    clearInitialState,
+    setInitialStateLivePreview,
+  } = useTimelineStore();
   const [transforms, setTransforms] = useState<Transform[]>([]);
+  const deferredTransforms = useDeferredValue(transforms);
   const [isAddTransformOpen, setIsAddTransformOpen] = useState(false);
 
   // Helper function to normalize decimal input (handles both dot and comma)
@@ -88,12 +96,24 @@ export function InitialStateDialog({
     }
   }, [isOpen, timelineId, targetId, getActiveTimeline]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      setInitialStateLivePreview(null);
+      return;
+    }
+    setInitialStateLivePreview({
+      timelineId,
+      targetId,
+      transforms: cloneTransformsForPreview(deferredTransforms),
+    });
+    return () => setInitialStateLivePreview(null);
+  }, [isOpen, timelineId, targetId, deferredTransforms, setInitialStateLivePreview]);
+
   const handleAddTransform = (type: TransformType) => {
     const existingTransform = transforms.find((t) => t.type === type);
     if (
       existingTransform &&
-      type !== "cssRule" &&
-      type !== "cssVar"
+      !transformAllowsMultiple(type)
     ) {
       return;
     }
@@ -373,7 +393,12 @@ export function InitialStateDialog({
           />
         );
       default:
-        return null;
+        return (
+          <ExtraTransformFields
+            transform={transform}
+            onUpdate={(values) => updateTransform(transform.id, values)}
+          />
+        );
     }
   };
 
@@ -388,28 +413,44 @@ export function InitialStateDialog({
 
   const handleSave = () => {
     setInitialState(timelineId, targetId, transforms);
+    setInitialStateLivePreview(null);
     onOpenChange(false);
   };
 
   const handleCancel = () => {
+    setInitialStateLivePreview(null);
     onOpenChange(false);
   };
 
   const handleClear = () => {
     clearInitialState(timelineId, targetId);
+    setInitialStateLivePreview(null);
     onOpenChange(false);
   };
 
+  const handleOpenChange = (open: boolean) => {
+    if (!open) {
+      setInitialStateLivePreview(null);
+    }
+    onOpenChange(open);
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[420px] max-h-[80vh]">
-        <DialogHeader>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+      <DialogContentSidebar className="left-56 max-w-[26rem]">
+        <DialogHeader className="shrink-0 pr-8">
           <DialogTitle>
             Initial State{layerName ? ` — ${layerName}` : ""}
           </DialogTitle>
         </DialogHeader>
 
-        <Card className="px-4 py-2">
+        <p className="text-xxs text-muted-foreground -mt-2 shrink-0">
+          Stato iniziale GSAP del layer prima dei keyframe. Le modifiche si
+          vedono subito nella preview; Salva per confermare.
+        </p>
+
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
+        <Card className="px-4 py-2 border-border/80">
           <div className="flex items-center justify-between mb-2">
             <Label className="text-md font-bold">Transforms</Label>
             <Popover
@@ -422,12 +463,11 @@ export function InitialStateDialog({
                   Add Transform
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-40 p-1" align="end">
+              <PopoverContent className="w-52 max-h-80 overflow-y-auto p-1" align="end">
                 <div className="space-y-1">
                   {transformOptions.map(({ value, label }) => {
                     const isUsed =
-                      value !== "cssRule" &&
-                      value !== "cssVar" &&
+                      !transformAllowsMultiple(value) &&
                       transforms.some((t) => t.type === value);
                     return (
                       <Button
@@ -451,7 +491,7 @@ export function InitialStateDialog({
             </Popover>
           </div>
 
-          <div className="space-y-4 overflow-y-auto max-h-[20rem]">
+          <div className="space-y-4">
             {transforms.length === 0 && (
               <p className="text-center text-xs mt-4 mb-6 text-muted-foreground">
                 No transforms added yet. Add one to animate.
@@ -479,13 +519,14 @@ export function InitialStateDialog({
             ))}
           </div>
         </Card>
+        </div>
 
-        <DialogFooter>
-          <div className="flex justify-between w-full">
+        <DialogFooter className="shrink-0 border-t border-border pt-4">
+          <div className="flex flex-col gap-2 w-full sm:flex-row sm:justify-between">
             <Button variant="destructive" onClick={handleClear}>
               Clear Initial State
             </Button>
-            <div className="flex gap-2">
+            <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={handleCancel}>
                 Cancel
               </Button>
@@ -493,7 +534,7 @@ export function InitialStateDialog({
             </div>
           </div>
         </DialogFooter>
-      </DialogContent>
+      </DialogContentSidebar>
     </Dialog>
   );
 }

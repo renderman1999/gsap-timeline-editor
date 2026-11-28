@@ -1,20 +1,33 @@
-import { useLayoutEffect, useMemo, useRef, type CSSProperties } from "react";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import type { AnimationTarget, TargetShape } from "@/stores/timeline-store";
 import type { Model3dSceneSettings } from "@/lib/model3d-scene";
 import {
   layerStyleToCss,
   layerStyleUsesLinkedCustomColor,
+  layerTextUsesFullViewportWidth,
+  resolveTextFullWidthStyle,
+  TEXT_FULL_VIEWPORT_WIDTH_CLASS,
+  type TextFullWidthContext,
 } from "@/lib/layer-style";
+import { resolveTextContainerStyle } from "@/lib/text-container-style";
+import { cn } from "@/lib/utils";
+import {
+  layerShapeChromeStyle,
+  layerShapeGeometryExtras,
+} from "@/lib/layer-shape-style";
+import { STAR_CLIP_PATH } from "@/lib/shape-star";
+import { imageLayerSizeStyle } from "@/lib/image-layer";
 import { sanitizeSvgMarkup } from "@/lib/svg-sanitize";
 import { ThreeModelLayerPreview } from "@/components/ThreeModelLayerPreview";
-import {
-  AudioLines,
-  Bell,
-  Heart,
-  Menu,
-  Square,
-  Triangle,
-} from "lucide-react";
+import { CodeLayerPreview } from "@/components/CodeLayerPreview";
+import { PixiLayerPreview } from "@/components/PixiLayerPreview";
+import { AudioLines, Bell, Heart, Menu } from "lucide-react";
 
 function shapeFill(target: AnimationTarget) {
   return target.style?.color ?? "#ffffff";
@@ -28,62 +41,68 @@ function renderShape(target: AnimationTarget) {
   const fill = shapeFill(target);
   const shape = target.shape ?? "square";
   const iconStyle = { color: fill, fill };
-  const inner = layerInnerStyle(target);
+  const chrome = layerShapeChromeStyle(target.style, shape);
+  const geomExtra = layerShapeGeometryExtras(target.style, shape);
+
+  const wrap = (body: ReactNode) => (
+    <div style={chrome}>{body}</div>
+  );
 
   switch (shape) {
     case "square":
-      return (
+      return wrap(
         <div
           className="w-20 h-20"
-          style={{ backgroundColor: fill, ...inner }}
+          style={{ backgroundColor: fill, ...geomExtra }}
         />
       );
     case "circle":
-      return (
+      return wrap(
         <div
           className="w-20 h-20 rounded-full"
-          style={{ backgroundColor: fill, ...inner }}
+          style={{ backgroundColor: fill, ...geomExtra }}
         />
       );
     case "triangle":
-      return (
+      return wrap(
         <div
           className="w-0 h-0"
           style={{
             borderLeft: "40px solid transparent",
             borderRight: "40px solid transparent",
             borderBottom: `69px solid ${fill}`,
-            ...inner,
           }}
         />
       );
+    case "star":
+      return wrap(
+        <div
+          className="h-20 w-20"
+          style={{ backgroundColor: fill, clipPath: STAR_CLIP_PATH }}
+        />
+      );
     case "heart":
-      return (
-        <div style={inner}>
-          <Heart className="w-20 h-20" style={iconStyle} />
-        </div>
+      return wrap(
+        <Heart className="w-20 h-20 shrink-0" style={iconStyle} />
       );
     case "bell":
-      return (
-        <div style={inner}>
-          <Bell className="w-20 h-20" style={iconStyle} />
-        </div>
+      return wrap(
+        <Bell className="w-20 h-20 shrink-0" style={iconStyle} />
       );
     case "menu":
-      return (
-        <div style={inner}>
-          <Menu className="w-20 h-20" style={iconStyle} />
-        </div>
+      return wrap(
+        <Menu className="w-20 h-20 shrink-0" style={iconStyle} />
       );
     case "audio-lines":
-      return (
-        <div style={inner}>
-          <AudioLines className="w-20 h-20" style={iconStyle} />
-        </div>
+      return wrap(
+        <AudioLines className="w-20 h-20 shrink-0" style={iconStyle} />
       );
     default:
-      return (
-        <div className="w-20 h-20" style={{ backgroundColor: fill }} />
+      return wrap(
+        <div
+          className="w-20 h-20"
+          style={{ backgroundColor: fill, ...geomExtra }}
+        />
       );
   }
 }
@@ -133,46 +152,82 @@ function InlineSvgLayer({ target }: { target: AnimationTarget }) {
 
 type PreviewTargetViewProps = {
   target: AnimationTarget;
+  /** viewport = 100vw breakout; section = 100% in sezione fullpage */
+  textFullWidthContext?: TextFullWidthContext;
+  /** Se impostato sul testo, GSAP tweena il paragrafo (necessario per larghezza 100%). */
+  previewTargetId?: string;
+  tweenHostStyle?: CSSProperties;
   model3dHostStyle?: CSSProperties;
   onModel3dMeshesDiscovered?: (targetId: string, names: string[]) => void;
+  /** Pixi: canvas a tutta sezione fullpage */
+  pixiSectionFill?: boolean;
 };
 
 export function PreviewTargetView({
   target,
+  textFullWidthContext = "viewport",
+  previewTargetId,
+  tweenHostStyle,
   model3dHostStyle,
   onModel3dMeshesDiscovered,
+  pixiSectionFill = false,
 }: PreviewTargetViewProps) {
   const extra = layerInnerStyle(target);
   const inheritColor = layerStyleUsesLinkedCustomColor(target.style);
 
   switch (target.type) {
-    case "text":
+    case "text": {
+      const fullViewport = layerTextUsesFullViewportWidth(target.style);
       return (
         <p
+          {...(previewTargetId
+            ? { "data-preview-target": previewTargetId }
+            : {})}
           data-text-layer
-          className="text-2xl font-semibold text-center max-w-xs"
+          className={cn(
+            "font-semibold text-center",
+            fullViewport
+              ? cn(TEXT_FULL_VIEWPORT_WIDTH_CLASS, "text-2xl sm:text-3xl")
+              : "text-2xl"
+          )}
           style={{
+            ...(fullViewport
+              ? resolveTextFullWidthStyle(textFullWidthContext)
+              : {}),
+            ...resolveTextContainerStyle(target.style),
             ...(inheritColor
               ? { color: "inherit" }
               : { color: target.style?.color ?? "#ffffff" }),
             ...extra,
+            ...tweenHostStyle,
           }}
         >
           {target.text || "Testo"}
         </p>
       );
+    }
     case "image":
       return (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={target.imageUrl}
           alt={target.name}
-          className="max-w-[10rem] max-h-[10rem] object-cover rounded"
-          style={extra}
+          className="rounded-lg"
+          style={{ ...extra, ...imageLayerSizeStyle(target.imageWidth) }}
         />
       );
     case "svg":
       return <InlineSvgLayer target={target} />;
+    case "code":
+      return <CodeLayerPreview target={target} />;
+    case "pixi":
+      return (
+        <PixiLayerPreview
+          target={target}
+          hostExtraStyle={model3dHostStyle}
+          sectionFill={pixiSectionFill}
+        />
+      );
     case "model3d":
       return (
         <ThreeModelLayerPreview

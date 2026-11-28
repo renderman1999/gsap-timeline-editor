@@ -12,7 +12,14 @@ import {
   ZoomIn,
   ZoomOut,
   Trash2,
+  BookmarkPlus,
 } from "lucide-react";
+import { TimelineLabelTrack } from "@/components/TimelineLabelTrack";
+import {
+  resolveLabelPositionTime,
+  sanitizeTimelineLabelName,
+} from "@/lib/gsap-labels";
+import { roundDelay } from "@/utils/round";
 import { Button } from "@/components/ui/button";
 import {
   useTimelineStore,
@@ -20,6 +27,13 @@ import {
   type Transform,
 } from "@/stores/timeline-store";
 import { normalizeTimeline } from "@/lib/timeline-migrate";
+
+const TRACK_BAR_GRADIENTS = [
+  "linear-gradient(90deg, #6dff5c 0%, #e8ff7a 100%)",
+  "linear-gradient(90deg, #1ec8ff 0%, #e7fbff 100%)",
+  "linear-gradient(90deg, #ff7a18 0%, #ffd0ea 100%)",
+  "linear-gradient(90deg, #b388ff 0%, #f3c4ff 100%)",
+];
 
 export function TimelineEditor() {
   const {
@@ -37,6 +51,7 @@ export function TimelineEditor() {
     recreateDemo,
     getActiveTimeline,
     setActiveTarget,
+    updateTimeline,
   } = useTimelineStore();
 
   const activeTimeline = useMemo(() => {
@@ -82,15 +97,19 @@ export function TimelineEditor() {
 
   // Memoize expensive calculations early to use in event handlers
   const getLastKeyframeEndMemo = useCallback(() => {
-    if (!activeTimeline || activeTimeline.keyframes.length === 0) return 0;
-    const lastKeyframe = activeTimeline.keyframes.reduce((latest, current) =>
-      current.delay + current.duration / 1000 >
-      latest.delay + latest.duration / 1000
-        ? current
-        : latest
+    if (!activeTimeline) return 0;
+    const lastKeyframe = activeTimeline.keyframes.reduce<number>((max, current) => {
+      const start =
+        resolveLabelPositionTime(current.position, activeTimeline.labels) ??
+        current.delay;
+      return Math.max(max, start + current.duration / 1000);
+    }, 0);
+    const labelEnd = (activeTimeline.labels ?? []).reduce(
+      (max, label) => Math.max(max, label.time),
+      0
     );
-    return lastKeyframe.delay + lastKeyframe.duration / 1000;
-  }, [activeTimeline?.keyframes]);
+    return Math.max(lastKeyframe, labelEnd);
+  }, [activeTimeline]);
 
   const totalDuration = useMemo(
     () => getLastKeyframeEndMemo(),
@@ -297,14 +316,7 @@ export function TimelineEditor() {
 
   // getLastKeyframeEnd is now memoized as getLastKeyframeEndMemo above
 
-  const handleSaveKeyframe = (keyframeData: {
-    targetId: string;
-    delay: number;
-    duration: number;
-    easing: string;
-    stagger?: number;
-    transforms: Transform[];
-  }) => {
+  const handleSaveKeyframe = (keyframeData: Omit<Keyframe, "id">) => {
     if (!activeTimeline) return;
 
     if (editingKeyframe) {
@@ -321,6 +333,58 @@ export function TimelineEditor() {
     setEditingKeyframe(keyframe);
     setDialogMode("edit");
     setIsKeyframeDialogOpen(true);
+  };
+
+  const handleAddLabel = () => {
+    if (!activeTimeline) return;
+    const labels = activeTimeline.labels ?? [];
+    const taken = new Set(labels.map((label) => label.name));
+    let index = labels.length + 1;
+    let name = `label${index}`;
+    while (taken.has(name)) {
+      index += 1;
+      name = `label${index}`;
+    }
+    updateTimeline(activeTimeline.id, {
+      labels: [
+        ...labels,
+        {
+          id: Math.random().toString(36).substr(2, 9),
+          name,
+          time: roundDelay(Math.max(0, currentTime)),
+        },
+      ],
+    });
+  };
+
+  const handleMoveLabel = (id: string, time: number) => {
+    if (!activeTimeline) return;
+    updateTimeline(activeTimeline.id, {
+      labels: (activeTimeline.labels ?? []).map((label) =>
+        label.id === id ? { ...label, time: roundDelay(Math.max(0, time)) } : label
+      ),
+    });
+  };
+
+  const handleRenameLabel = (id: string, name: string) => {
+    if (!activeTimeline) return;
+    const nextName = sanitizeTimelineLabelName(name);
+    if (!nextName) return;
+    const labels = activeTimeline.labels ?? [];
+    if (labels.some((label) => label.id !== id && label.name === nextName)) return;
+    updateTimeline(activeTimeline.id, {
+      labels: labels.map((label) =>
+        label.id === id ? { ...label, name: nextName } : label
+      ),
+    });
+  };
+
+  const handleRemoveLabel = (id: string) => {
+    if (!activeTimeline) return;
+    const labels = (activeTimeline.labels ?? []).filter((label) => label.id !== id);
+    updateTimeline(activeTimeline.id, {
+      labels: labels.length > 0 ? labels : undefined,
+    });
   };
 
   const handleAddKeyframe = () => {
@@ -361,11 +425,11 @@ export function TimelineEditor() {
     return (
       <div className="text-center flex-1 min-h-0 px-4 py-8 flex flex-col items-center justify-center text-muted-foreground gap-4">
         <div>
-          There are no timelines to edit. <br />
-          Create a new one or import an existing one to get started.
+          Nessun progetto selezionato. <br />
+          Crea un nuovo progetto o importa un progetto esistente per iniziare.
         </div>
         <Button onClick={recreateDemo} variant="outline">
-          Add a Demo Timeline
+          Apri demo
         </Button>
       </div>
     );
@@ -440,10 +504,21 @@ export function TimelineEditor() {
             )}
           </div>
 
-          <Button size="sm" className="gap-2" onClick={handleAddKeyframe}>
-            <Plus className="h-4 w-4" />
-            Add Keyframe
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" className="gap-2" onClick={handleAddKeyframe}>
+              <Plus className="h-4 w-4" />
+              Add Keyframe
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              onClick={handleAddLabel}
+            >
+              <BookmarkPlus className="h-4 w-4" />
+              Label
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -464,6 +539,7 @@ export function TimelineEditor() {
         initialData={dialogMode === "add" ? initialKeyframeData : undefined}
         onSave={handleSaveKeyframe}
         onCancel={handleDialogCancel}
+        labelNames={(activeTimeline.labels ?? []).map((label) => label.name)}
       />
 
       {/* Timeline */}
@@ -471,32 +547,40 @@ export function TimelineEditor() {
         ref={timelineVerticalRef}
         className="flex-1 min-h-0 px-4 pt-2 pb-0 w-full min-w-0 overflow-y-auto scrollbar-none"
       >
-        <div className="relative bg-muted/20 rounded-t-lg p-4 pb-3 min-h-32 w-full">
+        <div className="relative bg-[#141414] text-neutral-200 rounded-t-lg p-4 pb-3 min-h-32 w-full">
           <div ref={scrollViewportRef} className="w-full overflow-x-auto">
             <div
               className="relative"
               style={{ width: `${timelineWidth + 88}px` }}
             >
               <div
-                className="relative h-6 mb-2 ml-[88px]"
+                className="relative h-8 mb-1 ml-[88px]"
                 style={{ width: `${timelineWidth}px` }}
               >
                 {timeMarkers.map((i) => (
                   <div
                     key={i}
-                    className="absolute top-0 h-6"
+                    className="absolute top-0 h-full"
                     style={{ left: `${(i / safeTotalDuration) * 100}%` }}
                   >
-                    <span className="absolute top-0 text-xs text-muted-foreground">
-                      {i}s
+                    <span className="absolute top-1 left-0 h-3 w-px bg-white/35" />
+                    <span className="absolute top-0 left-1.5 text-[10px] tabular-nums text-neutral-400">
+                      {i}
                     </span>
                   </div>
                 ))}
+                <TimelineLabelTrack
+                  labels={activeTimeline.labels ?? []}
+                  duration={safeTotalDuration}
+                  onSeek={setCurrentTime}
+                  onMove={handleMoveLabel}
+                  onRename={handleRenameLabel}
+                  onRemove={handleRemoveLabel}
+                />
               </div>
 
-              {activeTimeline.targets.map((target) => {
-                const layerInitial =
-                  activeTimeline.initialStates?.[target.id];
+              {activeTimeline.targets.map((target, layerIndex) => {
+                const layerInitial = activeTimeline.initialStates?.[target.id];
                 const layerKeyframes = activeTimeline.keyframes.filter(
                   (k) => k.targetId === target.id
                 );
@@ -504,53 +588,54 @@ export function TimelineEditor() {
                   target.id === activeTimeline.activeTargetId;
 
                 return (
-                  <div key={target.id} className="flex gap-2 mb-2 items-stretch">
+                  <div key={target.id} className="flex gap-2 mb-1.5 items-stretch">
                     <div
                       className={`w-20 shrink-0 flex flex-col gap-1 ${
-                        isActiveLayer ? "opacity-100" : "opacity-80"
+                        isActiveLayer ? "opacity-100" : "opacity-70"
                       }`}
                     >
                       <button
                         type="button"
-                        className="text-left text-xxs font-medium truncate text-primary hover:underline"
+                        className="text-left text-xxs font-medium truncate text-neutral-100 hover:underline"
                         onClick={() =>
                           setActiveTarget(activeTimeline.id, target.id)
                         }
                         title="Layer attivo per nuovi keyframe"
                       >
                         {target.name}
+                        {target.timePlayback ? " · tempo" : ""}
                       </button>
                       {layerInitial?.length ? (
-                        <button
-                          type="button"
-                          className="h-14 w-full bg-blue-500/20 rounded hover:bg-blue-500/30 border border-blue-500/40 text-left cursor-pointer"
-                          onClick={() => {
-                            setInitialStateTargetId(target.id);
-                            setIsInitialStateDialogOpen(true);
-                          }}
-                        >
-                          <div className="p-1.5 h-full flex flex-col justify-between">
-                            <span className="text-xxs font-medium text-blue-700">
-                              Initial
-                            </span>
-                            <span className="text-xxs text-blue-600">
-                              {layerInitial.length}
-                            </span>
-                          </div>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="h-14 w-full border border-dashed border-primary/50 rounded hover:bg-primary/5 cursor-pointer flex flex-col items-center justify-center"
-                          onClick={() => {
-                            setInitialStateTargetId(target.id);
-                            setIsInitialStateDialogOpen(true);
-                          }}
-                        >
-                          <Plus className="h-3 w-3 text-primary" />
-                          <span className="text-xxs text-primary">Initial</span>
-                        </button>
-                      )}
+                          <button
+                            type="button"
+                            className="h-8 w-full bg-sky-400/15 rounded hover:bg-sky-400/25 border border-sky-300/40 text-left cursor-pointer"
+                            onClick={() => {
+                              setInitialStateTargetId(target.id);
+                              setIsInitialStateDialogOpen(true);
+                            }}
+                          >
+                            <div className="p-1.5 h-full flex flex-col justify-between">
+                              <span className="text-[10px] font-medium text-sky-100">
+                                Initial
+                              </span>
+                              <span className="text-[10px] text-sky-200">
+                                {layerInitial.length}
+                              </span>
+                            </div>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="h-8 w-full border border-dashed border-white/25 rounded hover:bg-white/5 cursor-pointer flex items-center justify-center gap-1"
+                            onClick={() => {
+                              setInitialStateTargetId(target.id);
+                              setIsInitialStateDialogOpen(true);
+                            }}
+                          >
+                            <Plus className="h-3 w-3 text-neutral-300" />
+                            <span className="text-[10px] text-neutral-300">Initial</span>
+                          </button>
+                        )}
                     </div>
 
                     <div
@@ -558,16 +643,25 @@ export function TimelineEditor() {
                         if (el) trackRefs.current.set(target.id, el);
                         else trackRefs.current.delete(target.id);
                       }}
-                      className="relative h-16 bg-card rounded border flex-1"
+                      className="relative h-9 bg-[#222] rounded-sm flex-1"
                       style={{ width: `${timelineWidth}px` }}
                     >
                       <div className="absolute inset-0 pointer-events-none">
                         {timeMarkers.map((i) => (
                           <div
                             key={i}
-                            className="absolute top-0 bottom-0 border-l border-border/50"
+                            className="absolute top-0 bottom-0 border-l border-white/10"
                             style={{
                               left: `${(i / safeTotalDuration) * 100}%`,
+                            }}
+                          />
+                        ))}
+                        {(activeTimeline.labels ?? []).map((label) => (
+                          <div
+                            key={label.id}
+                            className="absolute top-0 bottom-0 border-l border-amber-500/80 z-10"
+                            style={{
+                              left: `${(label.time / safeTotalDuration) * 100}%`,
                             }}
                           />
                         ))}
@@ -576,14 +670,21 @@ export function TimelineEditor() {
                       {layerKeyframes.map((keyframe) => (
                         <div
                           key={keyframe.id}
-                          className={`absolute top-2 bottom-2 rounded z-20 pointer-events-auto group ${
+                          className={`absolute top-1 bottom-1 rounded-full z-20 pointer-events-auto group ${
                             isDragging &&
                             dragOperation?.keyframeId === keyframe.id
                               ? "opacity-70"
                               : ""
                           }`}
                           style={{
-                            left: `${(keyframe.delay / safeTotalDuration) * 100}%`,
+                            left: `${
+                              ((resolveLabelPositionTime(
+                                keyframe.position,
+                                activeTimeline.labels
+                              ) ?? keyframe.delay) /
+                                safeTotalDuration) *
+                              100
+                            }%`,
                             width: `${
                               (keyframe.duration / 1000 / safeTotalDuration) *
                               100
@@ -591,7 +692,13 @@ export function TimelineEditor() {
                           }}
                         >
                           <div
-                            className="h-full bg-primary/20 border border-primary rounded-lg cursor-grab active:cursor-grabbing relative"
+                            className="h-full rounded-full cursor-grab active:cursor-grabbing relative shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
+                            style={{
+                              background:
+                                TRACK_BAR_GRADIENTS[
+                                  layerIndex % TRACK_BAR_GRADIENTS.length
+                                ],
+                            }}
                             onMouseDown={(e) => {
                               const rect =
                                 e.currentTarget.getBoundingClientRect();
@@ -613,7 +720,7 @@ export function TimelineEditor() {
                             }}
                           >
                             <div
-                              className="absolute top-0 right-0 bottom-0 w-3.5 z-10 cursor-ew-resize rounded-r-md border-l border-primary/40 bg-primary/25 hover:bg-primary/40"
+                              className="absolute top-0 right-0 bottom-0 w-3 z-10 cursor-ew-resize rounded-r-full bg-black/15 hover:bg-black/25"
                               title="Trascina per cambiare durata"
                               onMouseDown={(e) => {
                                 e.stopPropagation();
@@ -627,13 +734,14 @@ export function TimelineEditor() {
                             />
                             <div className="absolute inset-0 flex flex-col p-1 overflow-hidden pointer-events-none">
                               <span
-                                className="text-xxs font-medium text-primary"
+                                className="text-[10px] font-medium text-neutral-900/80"
                                 suppressHydrationWarning
                               >
                                 {keyframe.duration}ms / {keyframe.easing}
+                                {keyframe.position ? ` @ ${keyframe.position}` : ""}
                               </span>
                               <span
-                                className="text-xxs text-primary bg-primary/10 px-1 rounded w-fit mt-1"
+                                className="text-[10px] text-neutral-900/70 w-fit"
                                 suppressHydrationWarning
                               >
                                 {keyframe.transforms.length} tr.
@@ -668,13 +776,14 @@ export function TimelineEditor() {
                 <button
                   type="button"
                   aria-label="Trascina playhead"
-                  className="absolute top-0 bottom-0 -translate-x-1/2 w-3.5 cursor-ew-resize pointer-events-auto touch-none"
+                  className="absolute top-0 bottom-0 -translate-x-1/2 w-4 cursor-ew-resize pointer-events-auto touch-none"
                   style={{
                     left: `${(currentTime / safeTotalDuration) * 100}%`,
                   }}
                   onMouseDown={handlePlayheadMouseDown}
                 >
-                  <span className="absolute left-1/2 top-0 bottom-0 w-0.5 -translate-x-1/2 bg-primary" />
+                  <span className="absolute left-1/2 top-3 bottom-0 w-px -translate-x-1/2 bg-[#f3e6c5]" />
+                  <span className="absolute left-1/2 top-0.5 h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-[#f3e6c5]" />
                 </button>
               </div>
             </div>

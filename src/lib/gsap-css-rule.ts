@@ -1,5 +1,7 @@
 import { gsap } from "gsap";
 import { CSSRulePlugin } from "gsap/CSSRulePlugin";
+import { escapeJsString } from "@/lib/gsap-export-code";
+import { formatPositionArg } from "@/lib/gsap-value";
 import type { Keyframe, Timeline, Transform } from "@/stores/timeline-store";
 
 export const CSS_RULE_CDN =
@@ -169,7 +171,7 @@ export function appendCssRuleSteps(
   step: {
     duration: number;
     ease: string;
-    position: number;
+    position: number | string;
     kind: "to" | "fromTo";
   }
 ): void {
@@ -209,22 +211,22 @@ export function cssRuleStepsToCodeLines(
   step: {
     duration: number;
     ease: string;
-    position: number;
+    position: number | string;
     kind: "to" | "fromTo";
   }
 ): string[] {
   return payloads.map((payload) => {
     const ruleExpr = `CSSRulePlugin.getRule("${payload.ruleSelector.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}")`;
     const toCss = `cssRule: ${cssRulePropsToCode(payload.to)}`;
-    const vars = `{ ${toCss}, duration: ${step.duration}, ease: "${step.ease}" }`;
+    const vars = `{ ${toCss}, duration: ${step.duration}, ease: "${escapeJsString(step.ease)}" }`;
     if (
       step.kind === "fromTo" &&
       payload.from &&
       Object.keys(payload.from).length > 0
     ) {
       const fromCss = `cssRule: ${cssRulePropsToCode(payload.from)}`;
-      return `tl.fromTo(${ruleExpr}, { ${fromCss} }, ${vars}, ${step.position});`;
+      return `tl.fromTo(${ruleExpr}, { ${fromCss} }, ${vars}, ${formatPositionArg(step.position)});`;
     }
-    return `tl.to(${ruleExpr}, ${vars}, ${step.position});`;
+    return `tl.to(${ruleExpr}, ${vars}, ${formatPositionArg(step.position)});`;
   });
 }

@@ -1,16 +1,30 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type HtmlExportPreviewOverlayProps = {
   html: string;
+  initialScrollTop?: number;
   onClose: () => void;
+};
+
+type ExportPreviewWindow = Window & {
+  ScrollTrigger?: { refresh: () => void; update: () => void };
+  syncMasterScrollAnimation?: () => void;
+  syncScrollAnimations?: () => void;
+  refreshScrollPreviews?: () => void;
+  __gsapMasterTl?: {
+    scrollTrigger?: { progress: number };
+    duration: () => number;
+    time: (value?: number) => number;
+  };
 };
 
 export function HtmlExportPreviewOverlay({
   html,
+  initialScrollTop = 0,
   onClose,
 }: HtmlExportPreviewOverlayProps) {
   const iframeSrc = useMemo(() => {
@@ -38,6 +52,44 @@ export function HtmlExportPreviewOverlay({
     };
   }, []);
 
+  const onIframeLoad = useCallback(
+    (event: React.SyntheticEvent<HTMLIFrameElement>) => {
+      const doc = event.currentTarget.contentDocument;
+      const win = doc?.defaultView as ExportPreviewWindow | null;
+      if (!doc || !win) return;
+
+      const applyEditorScroll = () => {
+        const scrollerEl = doc.getElementById("scroller");
+        if (!scrollerEl) return false;
+
+        win.ScrollTrigger?.refresh();
+        if (initialScrollTop > 0) {
+          scrollerEl.scrollTop = initialScrollTop;
+        }
+        win.ScrollTrigger?.refresh();
+        win.ScrollTrigger?.update();
+        win.syncScrollAnimations?.();
+        win.syncMasterScrollAnimation?.();
+        win.refreshScrollPreviews?.();
+        return true;
+      };
+
+      const schedule = () => {
+        applyEditorScroll();
+        requestAnimationFrame(() => {
+          requestAnimationFrame(applyEditorScroll);
+        });
+      };
+
+      win.addEventListener("gsap-export-ready", schedule, { once: true });
+      schedule();
+      win.addEventListener("load", schedule, { once: true });
+      const retryMs = [80, 200, 500, 1500];
+      retryMs.forEach((ms) => win.setTimeout(schedule, ms));
+    },
+    [initialScrollTop]
+  );
+
   return (
     <div
       className="fixed inset-0 z-[300] bg-background"
@@ -59,6 +111,7 @@ export function HtmlExportPreviewOverlay({
         title="Anteprima export HTML"
         src={iframeSrc}
         className="h-full w-full border-0"
+        onLoad={onIframeLoad}
       />
     </div>
   );

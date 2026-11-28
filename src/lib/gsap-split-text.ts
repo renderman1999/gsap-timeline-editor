@@ -1,5 +1,6 @@
 import { gsap } from "gsap";
 import { SplitText } from "gsap/SplitText";
+import { domTweenSelector, jsQuotedSelector } from "@/lib/gsap-export-code";
 import type { AnimationTarget, Timeline } from "@/stores/timeline-store";
 import type { TextSplitMode } from "@/stores/timeline-store";
 
@@ -42,18 +43,19 @@ export function splitTextCreateCode(target: AnimationTarget): string[] {
     return [];
   }
   const varName = splitTextVarName(target.id);
-  const selector = target.selector.trim();
   const type = target.textSplit === "lines" ? "lines" : target.textSplit;
   return [
-    `let ${varName} = SplitText.create("${selector.replace(/"/g, '\\"')}", { type: "${type}" });`,
+    `let ${varName} = SplitText.create(${jsQuotedSelector(domTweenSelector(target))}, { type: "${type}" });`,
   ];
 }
 
 export function resolvePreviewTextElement(
   wrapper: HTMLElement
 ): HTMLElement | null {
+  if (wrapper.matches?.("[data-text-layer]")) return wrapper;
   const tagged = wrapper.querySelector<HTMLElement>("[data-text-layer]");
   if (tagged) return tagged;
+  if (wrapper.matches?.("p, h1, h2, h3, span")) return wrapper;
   return wrapper.querySelector("p, h1, h2, h3, span");
 }
 

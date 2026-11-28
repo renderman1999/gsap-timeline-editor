@@ -4,14 +4,17 @@ import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import {
   shouldHandleNumericWheel,
+  stepNumericText,
   valueFromNumericWheel,
 } from "@/lib/numeric-wheel";
 
 interface InputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "size"> {
   size?: "sm" | "default";
-  /** Moltiplicatore dello step con Shift + rotellina (solo type="number"). Default 10. */
+  /** Moltiplicatore dello step con Shift + rotellina. Default 10. */
   wheelShiftMultiplier?: number;
+  /** Rotellina anche su type="text": cambia il primo numero e conserva unità e +=. */
+  numericWheel?: boolean;
 }
 
 function Input({
@@ -25,6 +28,7 @@ function Input({
   max,
   value,
   wheelShiftMultiplier,
+  numericWheel = false,
   ...props
 }: InputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -32,30 +36,42 @@ function Input({
   onChangeRef.current = onChange;
 
   useEffect(() => {
-    if (type !== "number") return;
+    const useNumber = type === "number";
+    const useText = !useNumber && numericWheel;
+    if (!useNumber && !useText) return;
     const el = inputRef.current;
     if (!el) return;
 
     const handleWheel = (e: WheelEvent) => {
       if (!shouldHandleNumericWheel(el)) return;
 
+      const raw = el.value;
+      let nextText: string;
+      if (useNumber) {
+        const parsed = parseFloat(raw);
+        const current = Number.isFinite(parsed) ? parsed : 0;
+        const next = valueFromNumericWheel(current, e, {
+          step,
+          min,
+          max,
+          shiftMultiplier: wheelShiftMultiplier,
+        });
+        if (next === current) return;
+        nextText = String(next);
+      } else {
+        const next = stepNumericText(raw, e, {
+          step,
+          min,
+          max,
+          shiftMultiplier: wheelShiftMultiplier,
+        });
+        if (next === null || next === raw) return;
+        nextText = next;
+      }
+
       e.preventDefault();
       e.stopPropagation();
-
-      const raw = value !== undefined && value !== null ? String(value) : el.value;
-      const parsed = parseFloat(raw);
-      const current = Number.isFinite(parsed) ? parsed : 0;
-
-      const next = valueFromNumericWheel(current, e, {
-        step,
-        min,
-        max,
-        shiftMultiplier: wheelShiftMultiplier,
-      });
-
-      if (next === current) return;
-
-      el.value = String(next);
+      el.value = nextText;
       onChangeRef.current?.({
         target: el,
         currentTarget: el,
@@ -64,7 +80,7 @@ function Input({
 
     el.addEventListener("wheel", handleWheel, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel);
-  }, [type, step, min, max, value, wheelShiftMultiplier]);
+  }, [type, step, min, max, wheelShiftMultiplier, numericWheel]);
 
   return (
     <input

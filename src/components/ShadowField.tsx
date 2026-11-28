@@ -88,6 +88,7 @@ export function BoxShadowField({ label, value, onChange }: BaseProps) {
         <div className="space-y-1">
           <Label className="text-xxs">X</Label>
           <Input
+            numericWheel
             value={parts.offsetX}
             onChange={(e) =>
               setParts({ ...parts, offsetX: e.target.value })
@@ -97,6 +98,7 @@ export function BoxShadowField({ label, value, onChange }: BaseProps) {
         <div className="space-y-1">
           <Label className="text-xxs">Y</Label>
           <Input
+            numericWheel
             value={parts.offsetY}
             onChange={(e) =>
               setParts({ ...parts, offsetY: e.target.value })
@@ -106,6 +108,7 @@ export function BoxShadowField({ label, value, onChange }: BaseProps) {
         <div className="space-y-1">
           <Label className="text-xxs">Blur</Label>
           <Input
+            numericWheel
             value={parts.blur}
             onChange={(e) => setParts({ ...parts, blur: e.target.value })}
           />
@@ -113,6 +116,7 @@ export function BoxShadowField({ label, value, onChange }: BaseProps) {
         <div className="space-y-1">
           <Label className="text-xxs">Spread</Label>
           <Input
+            numericWheel
             value={parts.spread}
             onChange={(e) =>
               setParts({ ...parts, spread: e.target.value })
@@ -198,6 +202,7 @@ export function TextShadowField({ label, value, onChange }: BaseProps) {
         <div className="space-y-1">
           <Label className="text-xxs">X</Label>
           <Input
+            numericWheel
             value={parts.offsetX}
             onChange={(e) =>
               setParts({ ...parts, offsetX: e.target.value })
@@ -207,6 +212,7 @@ export function TextShadowField({ label, value, onChange }: BaseProps) {
         <div className="space-y-1">
           <Label className="text-xxs">Y</Label>
           <Input
+            numericWheel
             value={parts.offsetY}
             onChange={(e) =>
               setParts({ ...parts, offsetY: e.target.value })
@@ -216,6 +222,7 @@ export function TextShadowField({ label, value, onChange }: BaseProps) {
         <div className="space-y-1">
           <Label className="text-xxs">Blur</Label>
           <Input
+            numericWheel
             value={parts.blur}
             onChange={(e) => setParts({ ...parts, blur: e.target.value })}
           />

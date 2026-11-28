@@ -1,5 +1,6 @@
 import { gsap } from "gsap";
 import { DrawSVGPlugin } from "gsap/DrawSVGPlugin";
+import { Flip } from "gsap/Flip";
 import {
   appendCssRuleSteps,
   applyCssVarTransformToProps,
@@ -13,11 +14,34 @@ import {
   motionPathConfigToCode,
   type MotionPathGsapConfig,
 } from "@/lib/gsap-motion-path";
+import { resolveEase } from "@/lib/gsap-ease";
 import { splitTweenTargetRef } from "@/lib/gsap-split-text";
+import {
+  hasTweenControls,
+  readFlip,
+  readScrollTo,
+  resolvePosition,
+  resolveStagger,
+  runtimeTweenControls,
+  tweenControlCodeParts,
+  type FlipStepConfig,
+  type ScrollToStepConfig,
+} from "@/lib/gsap-tween-controls";
+import {
+  cssPropName,
+  formatCodeValue,
+  formatPositionArg,
+  materializeTweenValue,
+  rotationWithSuffix,
+} from "@/lib/gsap-value";
 import {
   threeInitialStateToCodeLines,
   threeTweenStepsToCodeLines,
 } from "@/lib/three-gsap";
+import {
+  pixiInitialStateToCodeLines,
+  pixiTweenStepsToCodeLines,
+} from "@/lib/pixi-gsap";
 import type {
   AnimationTarget,
   Keyframe,
@@ -30,6 +54,7 @@ const SVG_PLUGIN_KEYS = new Set(["drawSVG", "morphSVG"]);
 export type GsapPropValue =
   | number
   | string
+  | boolean
   | MotionPathGsapConfig
   | Record<string, unknown>;
 
@@ -38,6 +63,18 @@ export type GsapProps = Record<string, GsapPropValue>;
 export const EXPORT_CODE_VERSION = "1.2.1";
 export const TARGET_SELECTOR = ".target";
 export const SCROLL_TRIGGER_SELECTOR = ".your-trigger";
+
+import {
+  domTweenSelector,
+  escapeJsString,
+  jsQuotedSelector,
+} from "@/lib/gsap-export-code";
+
+export {
+  domTweenSelector,
+  escapeJsString,
+  jsQuotedSelector,
+} from "@/lib/gsap-export-code";
 
 export function defaultGsapProps(): GsapProps {
   return {
@@ -84,37 +121,78 @@ export function filterTypeToString(
   }
 }
 
+function optionalValue(
+  value: number | string | undefined
+): number | string | undefined {
+  if (value == null || value === "") return undefined;
+  return value;
+}
+
+function requiredValue(
+  value: number | string | undefined,
+  fallback: number | string
+): number | string {
+  if (value == null || value === "") return fallback;
+  return value;
+}
+
+function pluginNumber(value: number | string | undefined, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+  return fallback;
+}
+
 export function applyTransformToProps(
   props: GsapProps,
   transform: Transform
 ): void {
   switch (transform.type) {
     case "move":
-      props.x = transform.values.x as number;
-      props.y = transform.values.y as number;
+      props.x = requiredValue(transform.values.x, 0);
+      props.y = requiredValue(transform.values.y, 0);
+      if (optionalValue(transform.values.xPercent) != null) {
+        props.xPercent = transform.values.xPercent;
+      }
+      if (optionalValue(transform.values.yPercent) != null) {
+        props.yPercent = transform.values.yPercent;
+      }
       break;
     case "rotate":
-      props.rotation = transform.values.rotation as number;
+      props.rotation = rotationWithSuffix(
+        transform.values.rotation,
+        transform.values.rotationDir
+      );
       break;
     case "rotateX":
-      props.rotationX = transform.values.rotationX as number;
+      props.rotationX = rotationWithSuffix(
+        transform.values.rotationX,
+        transform.values.rotationXDir
+      );
       break;
     case "rotateY":
-      props.rotationY = transform.values.rotationY as number;
+      props.rotationY = rotationWithSuffix(
+        transform.values.rotationY,
+        transform.values.rotationYDir
+      );
       break;
     case "moveZ":
-      props.z = transform.values.z as number;
+      props.z = requiredValue(transform.values.z, 0);
       break;
     case "opacity":
-      props.opacity = transform.values.opacity as number;
+      props.opacity = requiredValue(transform.values.opacity, 1);
+      break;
+    case "autoAlpha":
+      props.autoAlpha = requiredValue(transform.values.autoAlpha, 0);
       break;
     case "skew":
-      props.skewX = transform.values.skewX as number;
-      props.skewY = transform.values.skewY as number;
+      props.skewX = requiredValue(transform.values.skewX, 0);
+      props.skewY = requiredValue(transform.values.skewY, 0);
       break;
     case "scale":
-      props.scaleX = transform.values.scaleX as number;
-      props.scaleY = transform.values.scaleY as number;
+      props.scaleX = requiredValue(transform.values.scaleX, 1);
+      props.scaleY = requiredValue(transform.values.scaleY, 1);
       break;
     case "filter":
       props.filter = filterTypeToString(
@@ -135,6 +213,65 @@ export function applyTransformToProps(
       break;
     case "cssVar":
       applyCssVarTransformToProps(props, transform.values);
+      break;
+    case "transformOrigin": {
+      const origin = String(transform.values.transformOrigin ?? "").trim();
+      if (origin) props.transformOrigin = origin;
+      break;
+    }
+    case "svgOrigin": {
+      const origin = String(transform.values.svgOrigin ?? "").trim();
+      if (origin) props.svgOrigin = origin;
+      break;
+    }
+    case "cssProp": {
+      const name = cssPropName(String(transform.values.property ?? ""));
+      const value = optionalValue(transform.values.value);
+      if (name && value != null) props[name] = value;
+      break;
+    }
+    case "scrambleText": {
+      const config: Record<string, unknown> = {
+        text: String(transform.values.text ?? ""),
+      };
+      const chars = String(transform.values.chars ?? "").trim();
+      if (chars) config.chars = chars;
+      if (optionalValue(transform.values.revealDelay) != null) {
+        config.revealDelay = pluginNumber(transform.values.revealDelay);
+      }
+      if (optionalValue(transform.values.speed) != null) {
+        config.speed = pluginNumber(transform.values.speed, 1);
+      }
+      const delimiter = String(transform.values.delimiter ?? "");
+      if (delimiter) config.delimiter = delimiter;
+      if (transform.values.rightToLeft === 1 || transform.values.rightToLeft === "1") {
+        config.rightToLeft = true;
+      }
+      props.scrambleText = config;
+      break;
+    }
+    case "physics2D":
+      props.physics2D = {
+        velocity: pluginNumber(transform.values.velocity, 200),
+        angle: pluginNumber(transform.values.angle, -60),
+        gravity: pluginNumber(transform.values.gravity, 500),
+        acceleration: pluginNumber(transform.values.acceleration),
+        accelerationAngle: pluginNumber(transform.values.accelerationAngle),
+        friction: pluginNumber(transform.values.friction),
+      };
+      break;
+    case "physicsProps": {
+      const property = cssPropName(String(transform.values.property ?? "x")) ?? "x";
+      props.physicsProps = {
+        [property]: {
+          velocity: pluginNumber(transform.values.velocity, 100),
+          acceleration: pluginNumber(transform.values.acceleration),
+          friction: pluginNumber(transform.values.friction),
+        },
+      };
+      break;
+    }
+    default:
       break;
   }
 }
@@ -161,9 +298,8 @@ export function svgPathSubselector(target: AnimationTarget): string {
 }
 
 export function exportSvgPluginSelector(target: AnimationTarget): string {
-  const base = target.selector.trim();
   const sub = svgPathSubselector(target);
-  return `${base} ${sub}`;
+  return `${domTweenSelector(target)} ${sub}`;
 }
 
 export function resolveSvgPathElement(
@@ -245,58 +381,10 @@ export function buildInitialProps(initialState?: Transform[]): GsapProps {
   }
 
   initialState.forEach((transform) => {
-    switch (transform.type) {
-      case "move":
-        props.x = (transform.values.x as number) ?? 0;
-        props.y = (transform.values.y as number) ?? 0;
-        break;
-      case "rotate":
-        props.rotation = (transform.values.rotation as number) ?? 0;
-        break;
-      case "rotateX":
-        props.rotationX = (transform.values.rotationX as number) ?? 0;
-        break;
-      case "rotateY":
-        props.rotationY = (transform.values.rotationY as number) ?? 0;
-        break;
-      case "moveZ":
-        props.z = (transform.values.z as number) ?? 0;
-        break;
-      case "opacity":
-        props.opacity =
-          transform.values.opacity !== undefined
-            ? (transform.values.opacity as number)
-            : 1;
-        break;
-      case "skew":
-        props.skewX = (transform.values.skewX as number) ?? 0;
-        props.skewY = (transform.values.skewY as number) ?? 0;
-        break;
-      case "scale":
-        props.scaleX = (transform.values.scaleX as number) ?? 1;
-        props.scaleY = (transform.values.scaleY as number) ?? 1;
-        break;
-      case "filter":
-        props.filter = filterTypeToString(
-          transform.values.filter,
-          transform.values.value
-        );
-        break;
-      case "drawSvg":
-        props.drawSVG = (transform.values.drawSVG as string) || "0% 100%";
-        break;
-      case "morphSvg": {
-        const morph = (transform.values.morphSVG as string)?.trim();
-        if (morph) props.morphSVG = morph;
-        break;
-      }
-      case "motionPath":
-        applyMotionPathTransformToProps(props, transform.values);
-        break;
-      case "cssVar":
-        applyCssVarTransformToProps(props, transform.values);
-        break;
+    if (transform.type === "cssRule" || transform.type === "flip" || transform.type === "scrollTo") {
+      return;
     }
+    applyTransformToProps(props, transform);
   });
 
   return props;
@@ -309,8 +397,12 @@ export interface TweenStep {
   cssRulePayloads?: CssRuleTweenPayload[];
   duration: number;
   ease: string;
-  position: number;
-  stagger?: number;
+  position: number | string;
+  stagger?: number | Record<string, unknown>;
+  controls?: Record<string, unknown>;
+  controlCode?: string[];
+  flip?: FlipStepConfig;
+  scrollTo?: ScrollToStepConfig;
 }
 
 function buildFromPropsForTransform(
@@ -319,53 +411,16 @@ function buildFromPropsForTransform(
   initialTransform: Transform | undefined
 ): void {
   if (!initialTransform) return;
-
-  switch (transform.type) {
-    case "move":
-      fromProps.x = (initialTransform.values.x as number) ?? 0;
-      fromProps.y = (initialTransform.values.y as number) ?? 0;
-      break;
-    case "rotate":
-      fromProps.rotation = (initialTransform.values.rotation as number) ?? 0;
-      break;
-    case "rotateX":
-      fromProps.rotationX = (initialTransform.values.rotationX as number) ?? 0;
-      break;
-    case "rotateY":
-      fromProps.rotationY = (initialTransform.values.rotationY as number) ?? 0;
-      break;
-    case "moveZ":
-      fromProps.z = (initialTransform.values.z as number) ?? 0;
-      break;
-    case "opacity":
-      fromProps.opacity = (initialTransform.values.opacity as number) ?? 1;
-      break;
-    case "skew":
-      fromProps.skewX = (initialTransform.values.skewX as number) ?? 0;
-      fromProps.skewY = (initialTransform.values.skewY as number) ?? 0;
-      break;
-    case "scale":
-      fromProps.scaleX = (initialTransform.values.scaleX as number) ?? 1;
-      fromProps.scaleY = (initialTransform.values.scaleY as number) ?? 1;
-      break;
-    case "filter":
-      fromProps.filter = filterTypeToString(
-        initialTransform.values.filter,
-        initialTransform.values.value
-      );
-      break;
-    case "drawSvg":
-      fromProps.drawSVG =
-        (initialTransform.values.drawSVG as string) || "0% 0%";
-      break;
-    case "morphSvg": {
-      const morph = (initialTransform.values.morphSVG as string)?.trim();
-      if (morph) fromProps.morphSVG = morph;
-      break;
-    }
-    case "cssVar":
-      applyCssVarTransformToProps(fromProps, initialTransform.values);
-      break;
+  if (
+    initialTransform.type === "flip" ||
+    initialTransform.type === "scrollTo" ||
+    initialTransform.type === "cssRule"
+  ) {
+    return;
+  }
+  applyTransformToProps(fromProps, initialTransform);
+  if (transform.type === "drawSvg" && fromProps.drawSVG == null) {
+    fromProps.drawSVG = "0% 0%";
   }
 }
 
@@ -385,19 +440,41 @@ export function buildTweenSteps(
       isFirstKeyframe && initialState?.length
         ? buildCssRuleFromGroups(keyframe.transforms, initialState)
         : groupCssRuleTransforms(keyframe.transforms);
-    if (Object.keys(to).length === 0 && cssRulePayloads.length === 0) return;
+    const flip = readFlip(keyframe);
+    const scrollTo = readScrollTo(keyframe);
+    const controls = runtimeTweenControls(keyframe);
+    if (
+      Object.keys(to).length === 0 &&
+      cssRulePayloads.length === 0 &&
+      !flip &&
+      !scrollTo &&
+      !hasTweenControls(keyframe)
+    ) {
+      return;
+    }
     let from: GsapProps | undefined;
     const fromProps: GsapProps = {};
 
     if (isFirstKeyframe) {
       keyframe.transforms.forEach((transform) => {
-        if (transform.type === "motionPath" || transform.type === "cssRule") {
+        if (
+          transform.type === "motionPath" ||
+          transform.type === "cssRule" ||
+          transform.type === "flip" ||
+          transform.type === "scrollTo" ||
+          transform.type === "scrambleText" ||
+          transform.type === "physics2D" ||
+          transform.type === "physicsProps"
+        ) {
           return;
         }
         const initialTransform = initialState?.find((t) => {
           if (t.type !== transform.type) return false;
           if (transform.type === "cssVar") {
             return t.values.varName === transform.values.varName;
+          }
+          if (transform.type === "cssProp") {
+            return t.values.property === transform.values.property;
           }
           if (transform.type === "cssRule") {
             return (
@@ -418,10 +495,7 @@ export function buildTweenSteps(
       }
     }
 
-    const stagger =
-      keyframe.stagger != null && keyframe.stagger > 0
-        ? keyframe.stagger
-        : undefined;
+    const stagger = resolveStagger(keyframe);
 
     steps.push({
       kind: from ? "fromTo" : "to",
@@ -430,9 +504,13 @@ export function buildTweenSteps(
       cssRulePayloads:
         cssRulePayloads.length > 0 ? cssRulePayloads : undefined,
       duration: keyframe.duration / 1000,
-      ease: keyframe.easing,
-      position: keyframe.delay,
+      ease: resolveEase(keyframe),
+      position: resolvePosition(keyframe),
       stagger,
+      controls,
+      controlCode: tweenControlCodeParts(keyframe),
+      flip,
+      scrollTo,
     });
   });
 
@@ -453,42 +531,120 @@ function appendPartitionedStep(
   tl: gsap.core.Timeline,
   domTarget: gsap.TweenTarget,
   svgTarget: gsap.TweenTarget | null,
-  step: TweenStep
+  step: TweenStep,
+  seenSvgFromProps: Set<string>
 ): void {
   const toDom = partitionGsapProps(step.to).dom;
   const toSvg = partitionGsapProps(step.to).svg;
   const fromDom = step.from ? partitionGsapProps(step.from).dom : undefined;
   const fromSvg = step.from ? partitionGsapProps(step.from).svg : undefined;
 
-  const baseVars = {
+  const sharedKeys = new Set([
+    "stagger",
+    "repeat",
+    "yoyo",
+    "repeatDelay",
+    "yoyoEase",
+    "overwrite",
+  ]);
+  const shared: Record<string, unknown> = {};
+  const once: Record<string, unknown> = {};
+  Object.entries(step.controls ?? {}).forEach(([key, value]) => {
+    if (sharedKeys.has(key)) shared[key] = value;
+    else once[key] = value;
+  });
+  const timing = {
     duration: step.duration,
     ease: step.ease,
-    ...(step.stagger != null && step.stagger > 0
-      ? { stagger: step.stagger }
-      : {}),
+    ...shared,
+  };
+  const live = (props: GsapProps) => {
+    const out: Record<string, unknown> = {};
+    Object.entries(props).forEach(([key, value]) => {
+      out[key] = materializeTweenValue(value);
+    });
+    return out;
   };
 
-  if (Object.keys(toDom).length > 0) {
-    const vars = { ...toDom, ...baseVars };
+  const hasDom = Object.keys(toDom).length > 0;
+  const willSvg = Boolean(svgTarget && (Object.keys(toSvg).length > 0 || toDom.svgOrigin != null));
+
+  if (hasDom) {
+    const vars = { ...live(toDom), ...timing, ...once };
     if (step.kind === "fromTo" && fromDom && Object.keys(fromDom).length > 0) {
-      tl.fromTo(domTarget, fromDom, vars, step.position);
+      tl.fromTo(domTarget, live(fromDom), vars, step.position);
     } else {
       tl.to(domTarget, vars, step.position);
     }
+  } else if (Object.keys(once).length > 0 && !willSvg && !step.flip && !step.scrollTo) {
+    tl.to(domTarget, { ...timing, ...once }, step.position);
+  }
+
+  if (toDom.svgOrigin != null && svgTarget) {
+    toSvg.svgOrigin = toDom.svgOrigin;
   }
 
   if (svgTarget && Object.keys(toSvg).length > 0) {
-    const vars = { ...toSvg, ...baseVars, immediateRender: false };
+    const svgImmediate =
+      typeof step.controls?.immediateRender === "boolean"
+        ? step.controls.immediateRender
+        : false;
+    const vars = {
+      ...live(toSvg),
+      ...timing,
+      ...(hasDom ? {} : once),
+      immediateRender: svgImmediate,
+    };
     if (step.kind === "fromTo" && fromSvg && Object.keys(fromSvg).length > 0) {
+      const fromKeys = Object.keys(fromSvg);
+      const repeatFrom = fromKeys.some((key) => seenSvgFromProps.has(key));
+      fromKeys.forEach((key) => seenSvgFromProps.add(key));
       tl.fromTo(
         svgTarget,
-        { ...fromSvg, immediateRender: true },
+        { ...live(fromSvg), immediateRender: !repeatFrom },
         vars,
         step.position
       );
     } else {
       tl.to(svgTarget, vars, step.position);
     }
+  }
+
+  if (step.flip) {
+    const nodes = gsap.utils.toArray(domTarget) as Element[];
+    if (nodes.length > 0) {
+      const state = Flip.getState(nodes);
+      if (step.flip.toggleClass) {
+        nodes.forEach((node) => {
+          if (node instanceof Element) node.classList.toggle(step.flip!.toggleClass!);
+        });
+      }
+      tl.add(
+        Flip.from(state, {
+          duration: step.duration,
+          ease: step.ease,
+          absolute: step.flip.absolute,
+          nested: step.flip.nested,
+          scale: step.flip.scale,
+          simple: step.flip.simple,
+        }),
+        step.position
+      );
+    }
+  }
+
+  if (step.scrollTo) {
+    const target =
+      step.scrollTo.target === "window" ? window : step.scrollTo.target;
+    tl.to(
+      target,
+      {
+        duration: step.duration,
+        ease: step.ease,
+        scrollTo: step.scrollTo.vars,
+      },
+      step.position
+    );
   }
 
   if (step.cssRulePayloads?.length) {
@@ -509,8 +665,9 @@ export function appendTweenStepsToTimeline(
   domTweenTarget?: gsap.TweenTarget | null
 ): void {
   const domEl = domTweenTarget ?? domTarget;
+  const seenSvgFromProps = new Set<string>();
   steps.forEach((step) => {
-    appendPartitionedStep(tl, domEl, svgTarget ?? null, step);
+    appendPartitionedStep(tl, domEl, svgTarget ?? null, step, seenSvgFromProps);
   });
 }
 
@@ -538,14 +695,7 @@ function formatPropValue(
   if (key === "motionPath" && value && typeof value === "object") {
     return `motionPath: ${motionPathConfigToCode(value as MotionPathGsapConfig)}`;
   }
-  if (typeof value === "string") {
-    const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-    return `${key}: "${escaped}"`;
-  }
-  if (typeof value === "number") {
-    return `${key}: ${value}`;
-  }
-  return `${key}: ${JSON.stringify(value)}`;
+  return `${key}: ${formatCodeValue(value)}`;
 }
 
 export function propsToCodeString(props: GsapProps): string {
@@ -561,17 +711,16 @@ function formatTweenToProps(step: TweenStep): string {
     parts.push(formatPropValue(key, value));
   });
   parts.push(`duration: ${step.duration}`);
-  parts.push(`ease: "${step.ease}"`);
-  if (step.stagger != null && step.stagger > 0) {
-    parts.push(`stagger: ${step.stagger}`);
-  }
+  parts.push(`ease: "${escapeJsString(step.ease)}"`);
+  (step.controlCode ?? []).forEach((part) => parts.push(part));
   return `{ ${parts.join(", ")} }`;
 }
 
 function tweenStepToCodeLines(
   targetSelector: string,
   step: TweenStep,
-  propsSubset: "all" | "dom" | "svg"
+  propsSubset: "all" | "dom" | "svg",
+  svgFromImmediateRender?: boolean
 ): string[] {
   const pick = (p: GsapProps) => {
     if (propsSubset === "all") return p;
@@ -579,7 +728,20 @@ function tweenStepToCodeLines(
   };
 
   const to = pick(step.to);
-  if (Object.keys(to).length === 0) return [];
+  const targetExpr = targetSelector.startsWith("split_")
+    ? targetSelector
+    : jsQuotedSelector(targetSelector);
+  if (Object.keys(to).length === 0) {
+    if (!step.controlCode?.length || propsSubset === "svg") return [];
+    const body = [
+      `duration: ${step.duration}`,
+      `ease: "${escapeJsString(step.ease)}"`,
+      ...step.controlCode,
+    ].join(", ");
+    return [
+      `tl.to(${targetExpr}, { ${body} }, ${formatPositionArg(step.position)});`,
+    ];
+  }
 
   const syntheticStep: TweenStep = {
     ...step,
@@ -594,15 +756,16 @@ function tweenStepToCodeLines(
   };
 
   const toString = formatTweenToProps(syntheticStep);
-  const targetExpr = targetSelector.startsWith("split_")
-    ? targetSelector
-    : `"${targetSelector}"`;
   if (syntheticStep.kind === "fromTo" && syntheticStep.from) {
+    const fromProps =
+      propsSubset === "svg" && svgFromImmediateRender != null
+        ? { ...syntheticStep.from, immediateRender: svgFromImmediateRender }
+        : syntheticStep.from;
     return [
-      `tl.fromTo(${targetExpr}, ${propsToCodeString(syntheticStep.from)}, ${toString}, ${step.position});`,
+      `tl.fromTo(${targetExpr}, ${propsToCodeString(fromProps)}, ${toString}, ${formatPositionArg(step.position)});`,
     ];
   }
-  return [`tl.to(${targetExpr}, ${toString}, ${step.position});`];
+  return [`tl.to(${targetExpr}, ${toString}, ${formatPositionArg(step.position)});`];
 }
 
 export function tweenStepsToCodeLines(
@@ -612,10 +775,14 @@ export function tweenStepsToCodeLines(
   if (target.type === "model3d") {
     return threeTweenStepsToCodeLines(target, steps);
   }
-  const domSelector = splitTweenTargetRef(target) ?? target.selector;
+  if (target.type === "pixi") {
+    return pixiTweenStepsToCodeLines(target, steps);
+  }
+  const domSelector = splitTweenTargetRef(target) ?? domTweenSelector(target);
   const svgSelector =
     target.type === "svg" ? exportSvgPluginSelector(target) : domSelector;
   const lines: string[] = [];
+  const seenSvgFromProps = new Set<string>();
 
   steps.forEach((step) => {
     const hasSvg = Object.keys(partitionGsapProps(step.to).svg).length > 0;
@@ -625,7 +792,43 @@ export function tweenStepsToCodeLines(
       lines.push(...tweenStepToCodeLines(domSelector, step, "dom"));
     }
     if (hasSvg && target.type === "svg") {
-      lines.push(...tweenStepToCodeLines(svgSelector, step, "svg"));
+      const fromSvg = step.from ? partitionGsapProps(step.from).svg : {};
+      const fromKeys = Object.keys(fromSvg);
+      const repeatFrom = fromKeys.some((key) => seenSvgFromProps.has(key));
+      fromKeys.forEach((key) => seenSvgFromProps.add(key));
+      lines.push(
+        ...tweenStepToCodeLines(
+          svgSelector,
+          hasDom ? { ...step, controlCode: [] } : step,
+          "svg",
+          fromKeys.length > 0 ? !repeatFrom : undefined
+        )
+      );
+    }
+    if (!hasDom && !hasSvg && (step.controlCode?.length || step.flip || step.scrollTo)) {
+      if (step.controlCode?.length && !step.flip && !step.scrollTo) {
+        lines.push(...tweenStepToCodeLines(domSelector, { ...step, to: {} }, "all"));
+      }
+    }
+    if (step.scrollTo) {
+      const scrollTarget =
+        step.scrollTo.target === "window"
+          ? "window"
+          : jsQuotedSelector(step.scrollTo.target);
+      lines.push(
+        `tl.to(${scrollTarget}, { duration: ${step.duration}, ease: "${escapeJsString(step.ease)}", scrollTo: ${JSON.stringify(step.scrollTo.vars)} }, ${formatPositionArg(step.position)});`
+      );
+    }
+    if (step.flip) {
+      const flipTarget = domSelector.startsWith("split_")
+        ? domSelector
+        : jsQuotedSelector(domSelector);
+      const toggle = step.flip.toggleClass
+        ? `gsap.utils.toArray(${flipTarget}).forEach(function(node){ node.classList.toggle("${escapeJsString(step.flip.toggleClass)}"); });`
+        : "";
+      lines.push(
+        `{ const flipState = Flip.getState(${flipTarget}); ${toggle} tl.add(Flip.from(flipState, { duration: ${step.duration}, ease: "${escapeJsString(step.ease)}", absolute: ${step.flip.absolute}, nested: ${step.flip.nested}, scale: ${step.flip.scale}, simple: ${step.flip.simple} }), ${formatPositionArg(step.position)}); }`
+      );
     }
     if (step.cssRulePayloads?.length) {
       lines.push(
@@ -649,6 +852,9 @@ export function initialStateToCodeLines(
   if (target.type === "model3d") {
     return threeInitialStateToCodeLines(target, initial);
   }
+  if (target.type === "pixi") {
+    return pixiInitialStateToCodeLines(target, initial);
+  }
   const props = buildInitialProps(initial);
   const { dom, svg } = partitionGsapProps(props);
   const lines: string[] = [];
@@ -658,13 +864,13 @@ export function initialStateToCodeLines(
       lines.push(`gsap.set(${splitRef}, ${propsToCodeString(dom)});`);
     } else {
       lines.push(
-        `gsap.set("${target.selector}", ${propsToCodeString(dom)});`
+        `gsap.set(${jsQuotedSelector(domTweenSelector(target))}, ${propsToCodeString(dom)});`
       );
     }
   }
   if (target.type === "svg" && Object.keys(svg).length > 0) {
     lines.push(
-      `gsap.set("${exportSvgPluginSelector(target)}", ${propsToCodeString(svg)});`
+      `gsap.set(${jsQuotedSelector(exportSvgPluginSelector(target))}, ${propsToCodeString(svg)});`
     );
   }
   return lines;

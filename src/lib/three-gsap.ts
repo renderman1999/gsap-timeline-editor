@@ -6,9 +6,11 @@ import type { AnimationTarget, Keyframe, Transform } from "@/stores/timeline-sto
 import {
   buildInitialProps,
   buildTweenSteps,
+  escapeJsString,
   type GsapProps,
   type TweenStep,
 } from "@/lib/gsap-build";
+import { formatPositionArg } from "@/lib/gsap-value";
 
 const DEG = Math.PI / 180;
 
@@ -45,7 +47,7 @@ export function gsapPropsToThreeChannels(props: GsapProps): ThreeChannels {
   return { position, rotation, scale };
 }
 
-function pickModel3dProps(props: GsapProps): GsapProps {
+export function pickModel3dProps(props: GsapProps): GsapProps {
   const keys = [
     "x",
     "y",
@@ -86,9 +88,17 @@ function appendThreeChannels(
   toCh: ThreeChannels,
   fromCh?: ThreeChannels
 ) {
+  const shared: Record<string, unknown> = {};
+  ["stagger", "repeat", "yoyo", "repeatDelay", "yoyoEase", "overwrite"].forEach(
+    (key) => {
+      const value = step.controls?.[key];
+      if (value != null) shared[key] = value;
+    }
+  );
   const base = {
     duration: step.duration,
     ease: step.ease,
+    ...shared,
   };
   const refit = () => {
     callThreeFitView(root);
@@ -171,7 +181,14 @@ export function threeTweenStepsToCodeLines(
     const fromCh = step.from
       ? gsapPropsToThreeChannels(pickModel3dProps(step.from))
       : undefined;
-    const base = `duration: ${step.duration}, ease: "${step.ease}"`;
+    const sharedCode = (step.controlCode ?? []).filter((part) =>
+      /^(stagger|repeat|yoyo|repeatDelay|yoyoEase|overwrite):/.test(part)
+    );
+    const base = [
+      `duration: ${step.duration}`,
+      `ease: "${escapeJsString(step.ease)}"`,
+      ...sharedCode,
+    ].join(", ");
     (["position", "rotation", "scale"] as const).forEach((channel) => {
       const to = toCh[channel];
       if (!Object.keys(to).length) return;
@@ -179,10 +196,10 @@ export function threeTweenStepsToCodeLines(
       const obj = `${root}.${channel}`;
       if (step.kind === "fromTo" && from && Object.keys(from).length) {
         lines.push(
-          `tl.fromTo(${obj}, { ${fmt(from)}, ${base} }, { ${fmt(to)}, ${base} }, ${step.position});`
+          `tl.fromTo(${obj}, { ${fmt(from)}, ${base} }, { ${fmt(to)}, ${base} }, ${formatPositionArg(step.position)});`
         );
       } else {
-        lines.push(`tl.to(${obj}, { ${fmt(to)}, ${base} }, ${step.position});`);
+        lines.push(`tl.to(${obj}, { ${fmt(to)}, ${base} }, ${formatPositionArg(step.position)});`);
       }
     });
   });

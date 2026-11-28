@@ -32,28 +32,80 @@ import {
   SPLIT_TEXT_CDN,
   timelineUsesSplitText,
 } from "@/lib/gsap-split-text";
+import { keyframeEaseCodeLines, timelineUsesEasePlugin } from "@/lib/gsap-ease";
+import { timelineLabelCodeLines } from "@/lib/gsap-labels";
+import {
+  CUSTOM_BOUNCE_CDN,
+  CUSTOM_EASE_CDN,
+  CUSTOM_WIGGLE_CDN,
+  EASE_PACK_CDN,
+  extraPluginRegisterLines,
+  FLIP_CDN,
+  PHYSICS_2D_CDN,
+  PHYSICS_PROPS_CDN,
+  SCRAMBLE_TEXT_CDN,
+  SCROLL_TO_CDN,
+  timelineUsesFlip,
+  timelineUsesPhysics2D,
+  timelineUsesPhysicsProps,
+  timelineUsesScrambleText,
+  timelineUsesScrollTo,
+} from "@/lib/gsap-extra-plugins";
+import { imageLayerInlineStyle } from "@/lib/image-layer";
+import { STAR_CLIP_PATH } from "@/lib/shape-star";
 import { normalizeTimeline } from "@/lib/timeline-migrate";
 import {
-  getScrollPinnedTargets,
+  looseSectionTargets,
+  pinnedResolvedSections,
+  resolveTimelineSections,
+  sectionIsPinned,
+  sectionMemberIds,
+  sectionScrubLayers,
+  targetsOutsideSectionScrub,
+} from "@/lib/timeline-sections";
+import {
   scrollTriggerTimelineCodeLines,
   usesSplitScrollPin,
 } from "@/lib/gsap-scroll-pin";
+import {
+  partitionScrollPlayback,
+  timePlaybackOptionLines,
+  previewLayerScrollTriggerSelector,
+  previewPinSectionSelector,
+  scrollTriggerPinnedSectionCodeLines,
+  scrollTriggerTargetCodeLines,
+} from "@/lib/scroll-trigger-per-layer";
 import { resolveStagePerspective, timelineUsesCss3d } from "@/lib/css3d";
 import {
   model3dLayerMarkup,
   threeBootstrapCodeLines,
-  threeImportMapLines,
   threeRootVarLines,
   timelineUsesModel3d,
 } from "@/lib/three-html-export";
+import {
+  pixiBootstrapCodeLines,
+  pixiImportMapEntry,
+  pixiLayerMarkup,
+  pixiRootVarLines,
+  timelineUsesPixi,
+} from "@/lib/pixi-html-export";
 import { MODEL3D_VIEW_H, MODEL3D_VIEW_W } from "@/lib/three-preview-fit";
 import { layerStackZIndex } from "@/lib/layer-stack";
+import { shapeLayerStyledExportMarkup } from "@/lib/shape-markup";
 import {
+  appendLayerMarkupClass,
   buildGoogleFontsStylesheetUrl,
   collectGoogleFontFamilies,
-  layerStyleToInlineString,
+  layerBaseStyleToInlineString,
+  layerCustomCssInlineString,
+  layerTextUsesFullViewportWidth,
+  TEXT_FULL_VIEWPORT_WIDTH_CLASS,
 } from "@/lib/layer-style";
 import { sanitizeSvgMarkup } from "@/lib/svg-sanitize";
+import {
+  buildCodeLayerScriptBlocks,
+  codeLayerMarkupInner,
+} from "@/lib/code-layer";
 import {
   normalizeBoundsClass,
   resolveTimelineBackground,
@@ -61,6 +113,20 @@ import {
 import type { AnimationTarget, Timeline } from "@/stores/timeline-store";
 
 const GSAP_CDN = "https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js";
+const THREE_MODULE = "0.187.0";
+
+function buildExportImportMap(model: Timeline): string {
+  const usesModel3d = timelineUsesModel3d(model);
+  const usesPixi = timelineUsesPixi(model);
+  if (!usesModel3d && !usesPixi) return "";
+  const imports: Record<string, string> = {};
+  if (usesModel3d) {
+    imports.three = `https://unpkg.com/three@${THREE_MODULE}/build/three.module.js`;
+    imports["three/addons/"] = `https://unpkg.com/three@${THREE_MODULE}/examples/jsm/`;
+  }
+  if (usesPixi) Object.assign(imports, pixiImportMapEntry());
+  return `<script type="importmap">\n${JSON.stringify({ imports }, null, 2)}\n</script>\n`;
+}
 const SCROLL_TRIGGER_CDN =
   "https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js";
 
@@ -87,44 +153,79 @@ function selectorAttrs(selector: string): string {
   return ` class="${escapeHtml(trimmed.replace(/^\./, ""))}"`;
 }
 
-function inlineStyleAttr(target: AnimationTarget): string {
-  const inline = layerStyleToInlineString(target.style);
+function inlineBaseStyleAttr(target: AnimationTarget): string {
+  const inline = layerBaseStyleToInlineString(target.style);
   return inline ? ` style="${escapeHtml(inline)}"` : "";
+}
+
+function wrapLayerCustomCss(inner: string, target: AnimationTarget): string {
+  const inline = layerCustomCssInlineString(target.style);
+  if (!inline.trim()) return inner;
+  return `<div class="layer-custom-css" style="${escapeHtml(inline)}">${inner}</div>`;
+}
+
+function previewTargetAttr(target: AnimationTarget): string {
+  return ` data-preview-target="${escapeHtml(target.id)}"`;
+}
+
+function buildTextLayerMarkup(target: AnimationTarget): string {
+  const attrs = selectorAttrs(target.selector);
+  const styleAttr = inlineBaseStyleAttr(target);
+  const tweenAttr = previewTargetAttr(target);
+  const textClass = layerTextUsesFullViewportWidth(target.style)
+    ? `${TEXT_FULL_VIEWPORT_WIDTH_CLASS} font-semibold text-center`
+    : "font-semibold text-center";
+  const textAttrs = appendLayerMarkupClass(attrs, textClass);
+  const p = `<p${tweenAttr}${textAttrs}${styleAttr} data-text-layer>${escapeHtml(target.text ?? "Testo")}</p>`;
+  const customInline = layerCustomCssInlineString(target.style);
+  const customStyleAttr = customInline.trim()
+    ? ` style="${escapeHtml(customInline)}"`
+    : "";
+  return `<div class="layer-custom-css"${customStyleAttr}><div class="layer-tween-host layer-custom-css-host">${p}</div></div>`;
 }
 
 function targetMarkup(target: AnimationTarget): string {
   const attrs = selectorAttrs(target.selector);
-  const styleAttr = inlineStyleAttr(target);
-  const fill = escapeHtml(target.style?.color ?? "#ffffff");
+  const styleAttr = inlineBaseStyleAttr(target);
+  const tweenAttr = previewTargetAttr(target);
 
+  let inner: string;
   if (target.type === "text") {
-    return `<p${attrs}${styleAttr}>${escapeHtml(target.text ?? "Testo")}</p>`;
-  }
-  if (target.type === "model3d") {
-    return model3dLayerMarkup(target);
-  }
-  if (target.type === "image") {
+    return buildTextLayerMarkup(target);
+  } else if (target.type === "model3d") {
+    inner = model3dLayerMarkup(target);
+  } else if (target.type === "image") {
     const src = escapeHtml(target.imageUrl ?? "");
     const alt = escapeHtml(target.name);
-    return `<img${attrs}${styleAttr} src="${src}" alt="${alt}" />`;
-  }
-
-  if (target.type === "svg") {
+    const size = imageLayerInlineStyle(target.imageWidth);
+    const base = layerBaseStyleToInlineString(target.style);
+    const imageStyle = ` style="${escapeHtml([size, base].filter(Boolean).join(";"))}"`;
+    const imageAttrs = appendLayerMarkupClass(attrs, "layer-image");
+    inner = `<img${tweenAttr}${imageAttrs}${imageStyle} src="${src}" alt="${alt}" />`;
+  } else if (target.type === "svg") {
     const svg = sanitizeSvgMarkup(target.svgContent);
-  const fillColor = target.style?.color
+    const fillColor = target.style?.color
       ? ` style="color: ${escapeHtml(target.style.color)}"`
       : "";
-    return `<div${attrs}${styleAttr} aria-label="${escapeHtml(target.name)}"><div class="layer-svg-host"${fillColor}>${svg}</div></div>`;
+    inner = `<div${tweenAttr}${attrs}${styleAttr} aria-label="${escapeHtml(target.name)}"><div class="layer-svg-host"${fillColor}>${svg}</div></div>`;
+  } else if (target.type === "pixi") {
+    inner = pixiLayerMarkup(target);
+  } else if (target.type === "code") {
+    const markup = codeLayerMarkupInner(target);
+    const hostAttrs = appendLayerMarkupClass(
+      `${tweenAttr}${attrs}${styleAttr}`,
+      "layer-code-host layer-tween-host"
+    );
+    inner = `<div${hostAttrs} data-code-layer>${markup}</div>`;
+  } else {
+    const shapeAttrs = appendLayerMarkupClass(
+      `${tweenAttr}${attrs}`,
+      "layer-shape-host"
+    );
+    inner = `<div${shapeAttrs} aria-label="${escapeHtml(target.name)}">${shapeLayerStyledExportMarkup(target)}</div>`;
   }
 
-  const shape = target.shape ?? "square";
-  if (shape === "triangle") {
-    return `<div${attrs} aria-label="${escapeHtml(target.name)}"><span class="shape shape-triangle" aria-hidden="true" style="border-bottom-color: ${fill}"></span></div>`;
-  }
-  if (shape === "circle") {
-    return `<div${attrs} aria-label="${escapeHtml(target.name)}"><span class="shape shape-circle" aria-hidden="true" style="background-color: ${fill}"></span></div>`;
-  }
-  return `<div${attrs} aria-label="${escapeHtml(target.name)}"><span class="shape shape-square" aria-hidden="true" style="background-color: ${fill}"></span></div>`;
+  return wrapLayerCustomCss(inner, target);
 }
 
 function buildStyles(isScroll: boolean, model: Timeline): string {
@@ -169,9 +270,22 @@ function buildStyles(isScroll: boolean, model: Timeline): string {
       min-height: 16rem;
       width: 100%;
     }
+    .stage.preview-trigger {
+      position: relative;
+      width: 100%;
+      min-height: 16rem;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
     .layer-stack {
       position: relative;
       width: 100%;
+      min-height: 16rem;
+    }
+    .pin-stage-host .layer-stack {
+      min-height: 16rem;
     }
     .layer-stack.css3d-stage {
       transform-style: preserve-3d;
@@ -188,6 +302,20 @@ function buildStyles(isScroll: boolean, model: Timeline): string {
       transform-style: preserve-3d;
       pointer-events: auto;
     }
+    .pixi-layout-host {
+      box-sizing: border-box;
+    }
+    .pixi-slot {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .pixi-canvas-host canvas {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
     .model3d-slot {
       display: flex;
       align-items: center;
@@ -200,6 +328,14 @@ function buildStyles(isScroll: boolean, model: Timeline): string {
       flex-shrink: 0;
       position: relative;
       overflow: hidden;
+    }
+    .layer-code-host {
+      display: block;
+      max-width: 100%;
+    }
+    .layer-code-host img {
+      max-width: 100%;
+      height: auto;
     }
     .model3d-canvas-host canvas {
       display: block;
@@ -216,10 +352,27 @@ function buildStyles(isScroll: boolean, model: Timeline): string {
       text-align: center;
       max-width: 20rem;
     }
+    p.${TEXT_FULL_VIEWPORT_WIDTH_CLASS} {
+      max-width: none;
+      padding-left: 1.25rem;
+      padding-right: 1.25rem;
+      box-sizing: border-box;
+    }
+  .stage p.${TEXT_FULL_VIEWPORT_WIDTH_CLASS},
+  .layer-slot p.${TEXT_FULL_VIEWPORT_WIDTH_CLASS} {
+      width: 100vw;
+      margin-left: calc(50% - 50vw);
+      margin-right: calc(50% - 50vw);
+    }
+    .flow-layer-slot p.${TEXT_FULL_VIEWPORT_WIDTH_CLASS} {
+      width: 100%;
+      margin-left: 0;
+      margin-right: 0;
+    }
+    img.layer-image,
     .stage img {
-      max-width: 10rem;
-      max-height: 10rem;
-      object-fit: cover;
+      height: auto;
+      object-fit: contain;
       border-radius: 8px;
     }
     .layer-svg-host {
@@ -240,23 +393,58 @@ function buildStyles(isScroll: boolean, model: Timeline): string {
     .shape {
       display: block;
     }
+    .layer-shape-host {
+      display: flex;
+      width: max-content;
+      height: max-content;
+      line-height: 0;
+    }
+    .layer-tween-host > p,
+    p[data-text-layer] {
+      margin: 0;
+    }
+    .shape-export-chrome {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      line-height: 0;
+    }
     .shape-square {
       width: 5rem;
       height: 5rem;
-      background: #fff;
+      box-sizing: border-box;
     }
     .shape-circle {
       width: 5rem;
       height: 5rem;
-      background: #fff;
       border-radius: 9999px;
+      box-sizing: border-box;
     }
     .shape-triangle {
       width: 0;
       height: 0;
-      border-left: 2.5rem solid transparent;
-      border-right: 2.5rem solid transparent;
-      border-bottom: 4.3rem solid #fff;
+      border-left: 40px solid transparent;
+      border-right: 40px solid transparent;
+      border-bottom: 69px solid #fff;
+    }
+    .shape-star {
+      width: 5rem;
+      height: 5rem;
+      clip-path: ${STAR_CLIP_PATH};
+      box-sizing: border-box;
+    }
+    .shape-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 5rem;
+      height: 5rem;
+    }
+    .shape-icon-svg {
+      display: block;
+      width: 5rem;
+      height: 5rem;
     }
     ${
       isScroll
@@ -265,6 +453,7 @@ function buildStyles(isScroll: boolean, model: Timeline): string {
       width: 100%;
       height: 100vh;
       overflow-y: auto;
+      container-type: size;
       scrollbar-width: none;
       -ms-overflow-style: none;
       background: transparent;
@@ -274,8 +463,8 @@ function buildStyles(isScroll: boolean, model: Timeline): string {
       width: 0;
       height: 0;
     }
-    .scroll-spacer { height: 100vh; }
-    .scroll-spacer-bottom { height: 200vh; }
+    .scroll-spacer { height: 40vh; }
+    .scroll-spacer-bottom { height: 80vh; }
     .scroll-content { position: relative; }
     .scroll-flow-layers {
       padding: 4rem 1rem;
@@ -283,22 +472,53 @@ function buildStyles(isScroll: boolean, model: Timeline): string {
       flex-direction: column;
       gap: 6rem;
     }
-    .flow-layer-slot {
+    .section-layers {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2rem;
+    }
+    .scroll-section {
       position: relative;
+      width: 100%;
       min-height: 12rem;
       display: flex;
       align-items: center;
       justify-content: center;
+      box-sizing: border-box;
+    }
+    .pin-layer-section {
+      position: relative;
+      width: 100%;
+      height: 100cqh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+    .flow-layer-slot {
+      position: relative;
+      min-height: 12rem;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
     }
     .pin-stage-host {
       position: relative;
       width: 100%;
       min-height: 16rem;
     }
-    #scroller .stage,
-    #scroller .layer-stack {
-      min-height: 16rem;
-      height: 100%;
+    #scroller .stage.preview-trigger,
+    #scroller .preview-trigger .pin-stage-host,
+    #scroller .preview-trigger .layer-stack {
+      min-height: 100vh;
+      height: auto;
+    }
+    #scroller .preview-trigger .layer-slot {
+      min-height: 100vh;
     }
     `
         : `
@@ -324,14 +544,24 @@ function buildStyles(isScroll: boolean, model: Timeline): string {
 function buildScript(model: Timeline): string {
   const isScroll = model.playbackType === "scroll";
   const usesModel3d = timelineUsesModel3d(model);
+  const usesPixi = timelineUsesPixi(model);
+  const needsAsyncBoot = usesModel3d || usesPixi;
   const lines: string[] = [];
 
-  if (usesModel3d) {
+  if (needsAsyncBoot) {
     lines.push("(async function () {");
-    threeBootstrapCodeLines(model).forEach((line) => lines.push(line));
-    lines.push("  await initModel3dLayers();");
-    threeRootVarLines(model).forEach((line) => lines.push(`  ${line}`));
-    lines.push("");
+    if (usesModel3d) {
+      threeBootstrapCodeLines(model).forEach((line) => lines.push(line));
+      lines.push("  await initModel3dLayers();");
+      threeRootVarLines(model).forEach((line) => lines.push(`  ${line}`));
+      lines.push("");
+    }
+    if (usesPixi) {
+      pixiBootstrapCodeLines(model).forEach((line) => lines.push(line));
+      lines.push("  await initPixiLayers();");
+      pixiRootVarLines(model).forEach((line) => lines.push(`  ${line}`));
+      lines.push("");
+    }
   }
 
   const needsDraw = timelineUsesDrawSvg(model);
@@ -378,6 +608,8 @@ function buildScript(model: Timeline): string {
       'if (typeof MorphSVGPlugin !== "undefined") { gsap.registerPlugin(MorphSVGPlugin); }'
     );
   }
+  extraPluginRegisterLines(model).forEach((line) => lines.push(line));
+  keyframeEaseCodeLines(model.keyframes).forEach((line) => lines.push(line));
 
   model.targets.forEach((target) => {
     splitTextCreateCode(target).forEach((line) => lines.push(line));
@@ -390,53 +622,187 @@ function buildScript(model: Timeline): string {
   });
   lines.push("");
 
-  lines.push("const tl = gsap.timeline({");
+  const sectionPins = isScroll ? pinnedResolvedSections(model) : [];
+  const { timed, pinned, own, shared: sharedFree } = partitionScrollPlayback(
+    isScroll ? targetsOutsideSectionScrub(model) : model.targets
+  );
+  const shared = isScroll
+    ? [...sharedFree, ...looseSectionTargets(model)]
+    : sharedFree;
+  const needsMasterScrollTrigger = isScroll && shared.length > 0;
+  const masterTriggerSelector =
+    pinned.length > 0 || sectionPins.length > 0
+      ? ".scroll-flow-layers"
+      : ".preview-trigger";
 
-  if (isScroll) {
-    lines.push("  paused: true,");
-    lines.push("  defaults: { immediateRender: false },");
-    scrollTriggerTimelineCodeLines(model, ".preview-trigger", {
-      scrollerSelector: "#scroller",
-    }).forEach((line) => lines.push(line));
-  } else if (model.loop) {
-    lines.push("  repeat: -1,");
-    if (model.yoyo) {
-      lines.push("  yoyo: true,");
-    }
-  }
-
-  lines.push("});");
-  lines.push("");
-
-  model.targets.forEach((target) => {
+  const appendTargetTweenLines = (
+    target: (typeof model.targets)[number],
+    timelineVar: string
+  ) => {
     const initial = model.initialStates?.[target.id];
     const layerKeyframes = model.keyframes.filter(
-      (k) => k.targetId === target.id
+      (k) => (k.targetId ?? model.activeTargetId) === target.id
     );
     if (layerKeyframes.length === 0) return;
 
     lines.push(`// ${target.name}`);
     const steps = buildTweenSteps(layerKeyframes, initial);
     tweenStepsToCodeLines(target, steps).forEach((line) => {
-      lines.push(line);
+      lines.push(
+        timelineVar === "tl"
+          ? line
+          : line.replace(/^tl\./, `${timelineVar}.`)
+      );
     });
     lines.push("");
-  });
+  };
+
+  if (isScroll && (sectionPins.length > 0 || pinned.length > 0)) {
+    const pinCount = sectionPins.length + pinned.length;
+    sectionPins.forEach((section, index) => {
+      const safeId = section.id.replace(/[^a-zA-Z0-9_]/g, "_");
+      const tlVar = `tlPin_${safeId}`;
+      lines.push(`const ${tlVar} = gsap.timeline({`);
+      lines.push("  paused: true,");
+      lines.push("  defaults: { immediateRender: false },");
+      scrollTriggerPinnedSectionCodeLines(
+        model,
+        { id: section.id } as (typeof model.targets)[number],
+        previewPinSectionSelector({
+          id: section.id,
+        } as (typeof model.targets)[number]),
+        {
+          scrollerSelector: "#scroller",
+          refreshPriority: pinCount - index,
+        }
+      ).forEach((line) => lines.push(line));
+      lines.push("});");
+      timelineLabelCodeLines(tlVar, model.labels).forEach((line) =>
+        lines.push(line)
+      );
+      lines.push("");
+      sectionScrubLayers(section).forEach((layer) => {
+        appendTargetTweenLines(layer, tlVar);
+      });
+    });
+    pinned.forEach((target, index) => {
+      const safeId = target.id.replace(/[^a-zA-Z0-9_]/g, "_");
+      const tlVar = `tlPin_${safeId}`;
+      lines.push(`const ${tlVar} = gsap.timeline({`);
+      lines.push("  paused: true,");
+      lines.push("  defaults: { immediateRender: false },");
+      scrollTriggerPinnedSectionCodeLines(
+        model,
+        target,
+        previewPinSectionSelector(target),
+        {
+          scrollerSelector: "#scroller",
+          refreshPriority: pinCount - (sectionPins.length + index),
+        }
+      ).forEach((line) => lines.push(line));
+      lines.push("});");
+      timelineLabelCodeLines(tlVar, model.labels).forEach((line) =>
+        lines.push(line)
+      );
+      lines.push("");
+      appendTargetTweenLines(target, tlVar);
+    });
+  }
+
+  if (isScroll && own.length > 0) {
+    own.forEach((target) => {
+      const layerKeyframes = model.keyframes.filter(
+        (k) => (k.targetId ?? model.activeTargetId) === target.id
+      );
+      if (layerKeyframes.length === 0) return;
+      const safeId = target.id.replace(/[^a-zA-Z0-9_]/g, "_");
+      const tlVar = `tlLayer_${safeId}`;
+      lines.push(`const ${tlVar} = gsap.timeline({`);
+      lines.push("  paused: true,");
+      lines.push("  defaults: { immediateRender: false },");
+      scrollTriggerTargetCodeLines(
+        model,
+        target,
+        previewLayerScrollTriggerSelector(target),
+        { scrollerSelector: "#scroller", refreshPriority: pinned.length + 1 }
+      ).forEach((line) => lines.push(line));
+      lines.push("});");
+      timelineLabelCodeLines(tlVar, model.labels).forEach((line) =>
+        lines.push(line)
+      );
+      lines.push("");
+      appendTargetTweenLines(target, tlVar);
+    });
+  }
+
+  if (isScroll && timed.length > 0) {
+    timed.forEach((target) => {
+      const layerKeyframes = model.keyframes.filter(
+        (k) => (k.targetId ?? model.activeTargetId) === target.id
+      );
+      if (layerKeyframes.length === 0) return;
+      const safeId = target.id.replace(/[^a-zA-Z0-9_]/g, "_");
+      const tlVar = `tlTime_${safeId}`;
+      lines.push(`const ${tlVar} = gsap.timeline({`);
+      timePlaybackOptionLines(model).forEach((line) => lines.push(line));
+      lines.push("});");
+      timelineLabelCodeLines(tlVar, model.labels).forEach((line) =>
+        lines.push(line)
+      );
+      lines.push("");
+      appendTargetTweenLines(target, tlVar);
+      lines.push(`${tlVar}.play();`);
+      lines.push("");
+    });
+  }
+
+  if (!isScroll || needsMasterScrollTrigger) {
+    lines.push("const tl = gsap.timeline({");
+
+    if (isScroll) {
+      lines.push("  paused: true,");
+      lines.push("  defaults: { immediateRender: false },");
+      scrollTriggerTimelineCodeLines(model, masterTriggerSelector, {
+        scrollerSelector: "#scroller",
+        refreshPriority: pinned.length + 1,
+      }).forEach((line) => lines.push(line));
+    } else if (model.loop) {
+      lines.push("  repeat: -1,");
+      if (model.yoyo) {
+        lines.push("  yoyo: true,");
+      }
+    }
+
+    lines.push("});");
+    timelineLabelCodeLines("tl", model.labels).forEach((line) => lines.push(line));
+    lines.push("");
+
+    const masterTargets = isScroll ? shared : model.targets;
+    masterTargets.forEach((target) => appendTargetTweenLines(target, "tl"));
+    if (isScroll) {
+      lines.push('if (typeof tl !== "undefined") { window.__gsapMasterTl = tl; }');
+    }
+  }
 
   if (isScroll) {
-    lines.push("const scroller = document.getElementById(\"scroller\");");
-    lines.push("function syncScrollAnimation() {");
-    lines.push("  if (!scroller || !tl.scrollTrigger) return;");
-    lines.push("  scroller.scrollTop = 0;");
-    lines.push("  ScrollTrigger.refresh();");
-    lines.push("  const p = scroller.scrollTop < 2 ? 0 : tl.scrollTrigger.progress;");
-    lines.push("  tl.progress(Math.max(0, Math.min(1, p)));");
+    lines.push("function syncScrollAnimations() {");
+    lines.push("  if (typeof ScrollTrigger === \"undefined\") return;");
+    lines.push("  ScrollTrigger.getAll().forEach(function (st) {");
+    lines.push("    if (st.animation) st.animation.progress(st.progress);");
+    lines.push("  });");
     lines.push("}");
-    lines.push("syncScrollAnimation();");
-    lines.push('window.addEventListener("load", syncScrollAnimation);');
-    lines.push(
-      'window.addEventListener("resize", () => { ScrollTrigger.refresh(); });'
-    );
+    lines.push("window.syncScrollAnimations = syncScrollAnimations;");
+    lines.push("function refreshScrollPreviews() {");
+    lines.push("  ScrollTrigger.refresh();");
+    lines.push("  syncScrollAnimations();");
+    lines.push("}");
+    lines.push("refreshScrollPreviews();");
+    if (needsMasterScrollTrigger) {
+      lines.push("function syncMasterScrollAnimation() {");
+      lines.push("  syncScrollAnimations();");
+      lines.push("}");
+      lines.push("syncMasterScrollAnimation();");
+    }
   } else {
     lines.push("tl.play();");
   }
@@ -446,7 +812,11 @@ function buildScript(model: Timeline): string {
     draggableSetupCodeLines(model).forEach((line) => lines.push(line));
   }
 
-  if (usesModel3d) {
+  lines.push(
+    "try { window.dispatchEvent(new Event(\"gsap-export-ready\")); } catch (_) {}"
+  );
+
+  if (needsAsyncBoot) {
     lines.push("})();");
   }
 
@@ -471,43 +841,83 @@ function buildLayerStackHtml(
   );
 }
 
+function sectionLayersHtml(layers: Timeline["targets"]): string {
+  return `<div class="section-layers">\n          ${layers
+    .map((layer) => targetMarkup(layer))
+    .join("\n          ")}\n        </div>`;
+}
+
 function buildFlowLayersHtml(model: Timeline): string {
-  const unpinned = model.targets.filter((t) => !t.scrollPin);
-  if (unpinned.length === 0) return "";
-  return unpinned
+  const members = sectionMemberIds(model);
+  const unpinned = model.targets.filter(
+    (target) =>
+      !members.has(target.id) &&
+      (target.timePlayback === true || !target.scrollPin)
+  );
+  const loose = resolveTimelineSections(model).filter(
+    (section) => !sectionIsPinned(section)
+  );
+  const slots = unpinned.map(
+    (target) =>
+      `<div class="flow-layer-slot">\n          ${targetMarkup(target)}\n        </div>`
+  );
+  const groups = loose.map(
+    (section) =>
+      `<div class="scroll-section" data-scroll-section="${escapeHtml(section.id)}">\n          ${sectionLayersHtml(section.layers)}\n        </div>`
+  );
+  return [...slots, ...groups].join("\n        ");
+}
+
+function buildPinSectionsHtml(model: Timeline): string {
+  const members = sectionMemberIds(model);
+  const grouped = pinnedResolvedSections(model).map(
+    (section) =>
+      `<section class="pin-layer-section" data-pin-section="${escapeHtml(section.id)}">\n          ${sectionLayersHtml(section.layers)}\n        </section>`
+  );
+  const singles = model.targets
+    .filter(
+      (target) =>
+        target.scrollPin &&
+        target.timePlayback !== true &&
+        !members.has(target.id)
+    )
     .map(
       (target) =>
-        `<div class="flow-layer-slot">\n          ${targetMarkup(target)}\n        </div>`
-    )
-    .join("\n        ");
+        `<section class="pin-layer-section" data-pin-section="${escapeHtml(target.id)}">\n          ${targetMarkup(target)}\n        </section>`
+    );
+  return [...grouped, ...singles].join("\n        ");
 }
 
 function buildBody(model: Timeline): string {
   const isScroll = model.playbackType === "scroll";
   const boundsCls = normalizeBoundsClass(model.boundsClass);
   const splitPin = usesSplitScrollPin(model);
-  const pinned = splitPin ? getScrollPinnedTargets(model) : model.targets;
-  const stackHtml = buildLayerStackHtml(model, pinned);
+  const stageTargets = splitPin ? [] : model.targets;
+  const stackHtml = buildLayerStackHtml(model, stageTargets);
   const css3dClass = timelineUsesCss3d(model) ? " css3d-stage" : "";
-  const stageInner = splitPin
-    ? `<div class="pin-stage-host ${boundsCls}${css3dClass}" data-preview-pin-host>\n        <div class="layer-stack${css3dClass}">\n        ${stackHtml}\n      </div>\n      </div>`
-  : `<div class="layer-stack${css3dClass}">\n        ${stackHtml}\n      </div>`;
+  const stageInner = `<div class="layer-stack${css3dClass}">\n        ${stackHtml}\n      </div>`;
+  const flowHtml = buildFlowLayersHtml(model);
   const flowBlock =
-    isScroll && splitPin
-      ? `<div class="scroll-flow-layers">\n        ${buildFlowLayersHtml(model)}\n      </div>\n        `
+    isScroll && splitPin && flowHtml
+      ? `<div class="scroll-flow-layers">\n        ${flowHtml}\n      </div>\n        `
       : "";
+  const pinBlock =
+    isScroll && splitPin ? `${buildPinSectionsHtml(model)}\n        ` : "";
+  const topSpacer =
+    isScroll ? `<div class="scroll-spacer"></div>\n        ` : "";
   const stageClassScroll = `stage ${boundsCls} preview-trigger`;
   const stageClassNormal = `stage ${boundsCls}`;
 
   if (isScroll) {
+    const stageBlock = splitPin
+      ? ""
+      : `<div class="${stageClassScroll}">
+          ${stageInner}
+        </div>\n        `;
     return `
     <div id="scroller">
       <div class="scroll-content">
-        <div class="scroll-spacer"></div>
-        ${flowBlock}<div class="${stageClassScroll}">
-          ${stageInner}
-        </div>
-        <div class="scroll-spacer-bottom"></div>
+        ${topSpacer}${flowBlock}${pinBlock}${stageBlock}<div class="scroll-spacer-bottom"></div>
       </div>
     </div>`;
   }
@@ -550,6 +960,33 @@ export function generateTimelineHtml(timeline: Timeline): string {
   const inertiaScript = timelineUsesDraggableInertia(model)
     ? `  <script src="${INERTIA_CDN}"></script>\n`
     : "";
+  const easePackScript = timelineUsesEasePlugin(model, "easePack")
+    ? `  <script src="${EASE_PACK_CDN}"></script>\n`
+    : "";
+  const customEaseScript = timelineUsesEasePlugin(model, "customEase")
+    ? `  <script src="${CUSTOM_EASE_CDN}"></script>\n`
+    : "";
+  const customWiggleScript = timelineUsesEasePlugin(model, "customWiggle")
+    ? `  <script src="${CUSTOM_WIGGLE_CDN}"></script>\n`
+    : "";
+  const customBounceScript = timelineUsesEasePlugin(model, "customBounce")
+    ? `  <script src="${CUSTOM_BOUNCE_CDN}"></script>\n`
+    : "";
+  const flipScript = timelineUsesFlip(model)
+    ? `  <script src="${FLIP_CDN}"></script>\n`
+    : "";
+  const scrambleScript = timelineUsesScrambleText(model)
+    ? `  <script src="${SCRAMBLE_TEXT_CDN}"></script>\n`
+    : "";
+  const physics2dScript = timelineUsesPhysics2D(model)
+    ? `  <script src="${PHYSICS_2D_CDN}"></script>\n`
+    : "";
+  const physicsPropsScript = timelineUsesPhysicsProps(model)
+    ? `  <script src="${PHYSICS_PROPS_CDN}"></script>\n`
+    : "";
+  const scrollToScript = timelineUsesScrollTo(model)
+    ? `  <script src="${SCROLL_TO_CDN}"></script>\n`
+    : "";
 
   const fontFamilies = collectGoogleFontFamilies(
     model.targets.map((t) => t.style)
@@ -558,8 +995,10 @@ export function generateTimelineHtml(timeline: Timeline): string {
   const fontsLink = fontsHref
     ? `  <link rel="stylesheet" href="${escapeHtml(fontsHref)}" />\n`
     : "";
-  const importMap = timelineUsesModel3d(model)
-    ? `${threeImportMapLines().join("\n")}\n`
+  const importMap = buildExportImportMap(model);
+  const codeLayerScripts = buildCodeLayerScriptBlocks(model.targets);
+  const codeLayerScriptBlock = codeLayerScripts.trim()
+    ? `  <script>\n${codeLayerScripts}\n  </script>\n`
     : "";
 
   return `<!DOCTYPE html>
@@ -572,8 +1011,8 @@ ${fontsLink}${importMap}  <style>${buildStyles(isScroll, model)}</style>
 </head>
 <body>
   ${body}
-  <script src="${GSAP_CDN}"></script>
-${scrollScript}${drawScript}${morphScript}${splitScript}${motionPathScript}${cssRuleScript}${inertiaScript}${draggableScript}  <script>
+  ${codeLayerScriptBlock}  <script src="${GSAP_CDN}"></script>
+${scrollScript}${drawScript}${morphScript}${splitScript}${motionPathScript}${cssRuleScript}${inertiaScript}${draggableScript}${easePackScript}${customEaseScript}${customWiggleScript}${customBounceScript}${flipScript}${scrambleScript}${physics2dScript}${physicsPropsScript}${scrollToScript}  <script>
 ${script}
   </script>
 </body>

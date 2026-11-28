@@ -1,12 +1,24 @@
 "use client";
 
-import { useRef, useMemo, useEffect } from "react";
+import {
+  forwardRef,
+  useRef,
+  useMemo,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { normalizeTimeline } from "@/lib/timeline-migrate";
 import { gsap } from "gsap";
 import type { Draggable } from "gsap/Draggable";
 import type { SplitText } from "gsap/SplitText";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
+import { registerKeyframeEases } from "@/lib/gsap-ease";
+import { addLabelsToTimeline } from "@/lib/gsap-labels";
 import { registerPreviewGsapPlugins } from "@/lib/gsap-register-preview";
 import { useTimelineStore } from "@/stores/timeline-store";
 import { Switch } from "@/components/ui/switch";
@@ -50,19 +62,50 @@ import {
   ScrollTriggerViewportOverlay,
   useScrollTriggerVisualState,
 } from "@/components/ScrollTriggerVisualEditor";
-import { inferScrollEndMode } from "@/lib/scroll-trigger-config";
+import { inferScrollEndMode, resolveScrollEnd } from "@/lib/scroll-trigger-config";
 import {
   normalizeBoundsClass,
   resolveTimelineBackground,
 } from "@/lib/timeline-stage";
-import { layerCustomCssToStyle } from "@/lib/layer-style";
+import { resolveInitialStatesForPreview } from "@/lib/initial-state-preview";
+import { targetsAnimationDigest } from "@/lib/preview-gsap-deps";
+import {
+  applyLayerStyleLivePreviewToTargets,
+  layerCustomCssToStyle,
+  layerStyleToInlineString,
+  layerTextUsesFullViewportWidth,
+  resolveTargetStyleForPreview,
+} from "@/lib/layer-style";
 import {
   buildScrollTriggerVars,
-  getScrollPinnedTargets,
+  killAllPreviewScrollTriggers,
   SCROLL_PIN_HOST_ATTR,
   usesSplitScrollPin,
 } from "@/lib/gsap-scroll-pin";
-import { stageCss3dStyle } from "@/lib/css3d";
+import {
+  buildPinnedSectionScrollTriggerVars,
+  buildScrollTriggerVarsForTarget,
+  layerHasOwnScrollTimeline,
+  partitionScrollPlayback,
+  resolveLayerScrollTriggerElement,
+  resolvePinnedMasterScrollTrigger,
+  shouldSyncScrollPlayhead,
+} from "@/lib/scroll-trigger-per-layer";
+import {
+  layerBelongsToFullpageStage,
+  timelineUsesScrollPinLayout,
+} from "@/lib/fullpage-scroll";
+import { initialStatesForAnimation } from "@/lib/timeline-editor-mode";
+import {
+  looseSectionTargets,
+  pinnedResolvedSections,
+  resolveTimelineSections,
+  sectionIsPinned,
+  sectionMemberIds,
+  sectionScrubLayers,
+  targetsOutsideSectionScrub,
+} from "@/lib/timeline-sections";
+import { stageCss3dStyle, timelineUsesCss3d } from "@/lib/css3d";
 import { layerStackZIndex } from "@/lib/layer-stack";
 import {
   getThreeLayerRoot,
@@ -74,6 +117,24 @@ import {
   appendThreeTweenStepsToTimeline,
 } from "@/lib/three-gsap";
 import { timelineUsesModel3d } from "@/lib/three-html-export";
+import {
+  getPixiLayoutEpoch,
+  isPixiLayerReady,
+  renderAllPixiLayers,
+  subscribePixiLayoutEpoch,
+} from "@/lib/pixi-layer-registry";
+import {
+  applyPixiInitialState,
+  appendPixiTweenStepsToTimeline,
+} from "@/lib/pixi-gsap";
+import { timelineUsesPixi } from "@/lib/pixi-html-export";
+import {
+  killPixiLayerGsapTweens,
+} from "@/lib/pixi-layer-registry";
+import {
+  killPreviewTimelineNow,
+  registerPreviewTimelineKiller,
+} from "@/lib/pixi-preview-sync";
 import { cn } from "@/lib/utils";
 
 registerPreviewGsapPlugins();
@@ -81,6 +142,17 @@ registerPreviewGsapPlugins();
 const showScrollMarkers =
   process.env.NODE_ENV === "development" ||
   process.env.NEXT_PUBLIC_SHOW_SCROLL_MARKERS === "true";
+
+const ScrollPreviewScrollBody = forwardRef<
+  HTMLDivElement,
+  { children: ReactNode }
+>(function ScrollPreviewScrollBody({ children }, ref) {
+  return (
+    <div ref={ref} className="min-h-[200vh] relative">
+      {children}
+    </div>
+  );
+});
 
 export function PreviewArea() {
   const timelines = useTimelineStore((s) => s.timelines);
@@ -93,13 +165,32 @@ export function PreviewArea() {
     updateTimeline,
     updateTarget,
   } = useTimelineStore();
+  const layerStyleLivePreview = useTimelineStore(
+    (s) => s.layerStyleLivePreview
+  );
+  const initialStateLivePreview = useTimelineStore(
+    (s) => s.initialStateLivePreview
+  );
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
   const previewScopeRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<gsap.core.Timeline | null>(null);
+  const masterTimelineRef = useRef<gsap.core.Timeline | null>(null);
+  const layerTimelinesRef = useRef<Map<string, gsap.core.Timeline>>(new Map());
   const scrollTriggerRef = useRef<ScrollTrigger | null>(null);
+  /** Evita che il playhead dell’editor sovrascriva lo scrub di ScrollTrigger sullo scroll. */
+  const scrollDrivenPlayheadRef = useRef(false);
+  /** Mantiene lo scroll durante il rebuild GSAP con anteprima initial state attiva. */
+  const scrollTopPreserveRef = useRef<number | null>(null);
+  /** Ultimo scrollTop noto (scroll classico): ripristino dopo kill ScrollTrigger. */
+  const scrollStabilityRef = useRef<number | null>(null);
+  const scrollPinRevertKeyRef = useRef<string | null>(null);
+  const [pinHealEpoch, setPinHealEpoch] = useState(0);
+  const pinHealAttemptsRef = useRef(0);
+  const initialStateLivePreviewRef = useRef(initialStateLivePreview);
+  initialStateLivePreviewRef.current = initialStateLivePreview;
   const splitInstancesRef = useRef<SplitText[]>([]);
   const dragInstancesRef = useRef<Draggable[]>([]);
 
@@ -120,10 +211,54 @@ export function PreviewArea() {
   const usesDraggable = activeTimeline
     ? timelineUsesDraggable(activeTimeline)
     : false;
+  const previewInitialStates = useMemo(() => {
+    if (!activeTimeline) return {};
+    return resolveInitialStatesForPreview(
+      activeTimeline.id,
+      activeTimeline.initialStates ?? {},
+      initialStateLivePreview
+    );
+  }, [activeTimeline, initialStateLivePreview]);
+
+  const animationInitialStates = useMemo(() => {
+    if (!activeTimeline) return {};
+    return initialStatesForAnimation(activeTimeline, previewInitialStates);
+  }, [activeTimeline, previewInitialStates]);
+
   const cssRuleStyles = useMemo(() => {
     if (!activeTimeline || !usesCssRule) return "";
-    return collectCssRuleStylesheet(activeTimeline);
-  }, [activeTimeline, usesCssRule]);
+    return collectCssRuleStylesheet({
+      ...activeTimeline,
+      initialStates: previewInitialStates,
+    });
+  }, [activeTimeline, usesCssRule, previewInitialStates]);
+
+  const previewTargetsWithLiveStyle = useMemo(() => {
+    if (!activeTimeline) return [];
+    return applyLayerStyleLivePreviewToTargets(
+      activeTimeline.id,
+      activeTimeline.targets,
+      layerStyleLivePreview
+    );
+  }, [activeTimeline, layerStyleLivePreview]);
+
+  const storedAnimationInitialStates = useMemo(() => {
+    if (!activeTimeline) return {};
+    return initialStatesForAnimation(
+      activeTimeline,
+      activeTimeline.initialStates ?? {}
+    );
+  }, [activeTimeline]);
+
+  const initialStatesStoreDigest = useMemo(() => {
+    if (!activeTimeline) return "";
+    return JSON.stringify(activeTimeline.initialStates ?? {});
+  }, [activeTimeline?.initialStates]);
+
+  const liveInitialPreviewDigest = useMemo(() => {
+    if (!initialStateLivePreview) return "";
+    return `${initialStateLivePreview.targetId}:${JSON.stringify(initialStateLivePreview.transforms)}`;
+  }, [initialStateLivePreview]);
 
   const timelineData = useMemo(() => {
     if (!activeTimeline) return null;
@@ -131,7 +266,7 @@ export function PreviewArea() {
       id: activeTimeline.id,
       keyframes: activeTimeline.keyframes,
       targets: activeTimeline.targets,
-      initialStates: activeTimeline.initialStates ?? {},
+      initialStates: storedAnimationInitialStates,
       loop: activeTimeline.loop,
       yoyo: activeTimeline.yoyo,
       playbackType: activeTimeline.playbackType,
@@ -143,7 +278,8 @@ export function PreviewArea() {
     activeTimeline?.id,
     activeTimeline?.keyframes,
     activeTimeline?.targets,
-    activeTimeline?.initialStates,
+    storedAnimationInitialStates,
+    initialStatesStoreDigest,
     activeTimeline?.loop,
     activeTimeline?.yoyo,
     activeTimeline?.playbackType,
@@ -152,13 +288,242 @@ export function PreviewArea() {
     activeTimeline?.scrollTriggerEnd,
   ]);
 
-  const gsapAnimationDeps = useMemo(
-    () => [timelineData, isScrollMode, showScrollMarkers],
-    [timelineData, isScrollMode, showScrollMarkers]
+  const scrollLayoutKey = activeTimeline ? activeTimeline.id : "none";
+
+  const pixiSettingsDigest = useMemo(() => {
+    if (!activeTimeline) return "";
+    return activeTimeline.targets
+      .filter((t) => t.type === "pixi")
+      .map((t) => JSON.stringify(t.pixiSettings ?? null))
+      .join("|");
+  }, [activeTimeline?.targets]);
+
+  const pixiLayoutEpoch = useSyncExternalStore(
+    subscribePixiLayoutEpoch,
+    getPixiLayoutEpoch,
+    getPixiLayoutEpoch
   );
+
+  const scrollTriggerLayerDigest = useMemo(() => {
+    if (!activeTimeline) return "";
+    return activeTimeline.targets
+      .map(
+        (t) =>
+          `${t.id}:${t.scrollTriggerOwn ? 1 : 0}:${t.timePlayback ? 1 : 0}:${t.scrollTriggerStart ?? ""}:${t.scrollTriggerEnd ?? ""}:${t.scrollTriggerScrollLength ?? ""}:${t.scrollTriggerSelector ?? ""}`
+      )
+      .join("|");
+  }, [activeTimeline?.targets]);
+
+  const gsapTargetsAnimationDigest = useMemo(() => {
+    if (!activeTimeline) return "";
+    return targetsAnimationDigest(activeTimeline.targets);
+  }, [activeTimeline?.targets]);
+
+  const timelineDataRef = useRef(timelineData);
+  const activeTimelineRef = useRef(activeTimeline);
+  timelineDataRef.current = timelineData;
+  activeTimelineRef.current = activeTimeline;
+
+  const initialPreviewCaptureKeyRef = useRef<string | null>(null);
+
+  useLayoutEffect(() => {
+    if (!isScrollMode) return;
+
+    if (!initialStateLivePreview) {
+      const hadLive = initialPreviewCaptureKeyRef.current !== null;
+      const scroller = scrollContainerRef.current;
+      const preserved = scrollTopPreserveRef.current;
+      if (hadLive && scroller && preserved !== null) {
+        scroller.scrollTop = preserved;
+        scrollStabilityRef.current = preserved;
+        ScrollTrigger.update();
+      }
+      initialPreviewCaptureKeyRef.current = null;
+      scrollTopPreserveRef.current = null;
+      return;
+    }
+    const captureKey = `${initialStateLivePreview.timelineId}:${initialStateLivePreview.targetId}`;
+    const scroller = scrollContainerRef.current;
+    if (!scroller) return;
+    if (initialPreviewCaptureKeyRef.current !== captureKey) {
+      initialPreviewCaptureKeyRef.current = captureKey;
+      scrollTopPreserveRef.current = scroller.scrollTop;
+    }
+  }, [initialStateLivePreview, isScrollMode]);
+
+  useEffect(() => {
+    if (!isScrollMode) return;
+    const scroller = scrollContainerRef.current;
+    if (!scroller) return;
+    const onScroll = () => {
+      scrollStabilityRef.current = scroller.scrollTop;
+      if (initialStateLivePreviewRef.current) {
+        scrollTopPreserveRef.current = scroller.scrollTop;
+      }
+    };
+    onScroll();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    const onStRefresh = () => {
+      const target = initialStateLivePreviewRef.current
+        ? scrollTopPreserveRef.current
+        : scrollStabilityRef.current;
+      if (target === null) return;
+      if (Math.abs(scroller.scrollTop - target) > 2) {
+        scroller.scrollTop = target;
+      }
+    };
+    ScrollTrigger.addEventListener("refresh", onStRefresh);
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      ScrollTrigger.removeEventListener("refresh", onStRefresh);
+    };
+  }, [
+    isScrollMode,
+    initialStateLivePreview?.timelineId,
+    initialStateLivePreview?.targetId,
+  ]);
+
+  const restoreScrollAfterStKill = () => {
+    const scroller = scrollContainerRef.current;
+    if (!scroller) return;
+    const target = initialStateLivePreviewRef.current
+      ? scrollTopPreserveRef.current
+      : scrollStabilityRef.current;
+    if (target === null) return;
+    if (Math.abs(scroller.scrollTop - target) > 2) {
+      scroller.scrollTop = target;
+    }
+  };
+
+  const sectionDigest = useMemo(() => {
+    if (!activeTimeline?.sections?.length) return "";
+    return activeTimeline.sections
+      .map(
+        (section) =>
+          `${section.id}:${section.scrollPin === false ? 0 : 1}:${section.layerIds.join(",")}`
+      )
+      .join("|");
+  }, [activeTimeline?.sections]);
+
+  const gsapAnimationDeps = useMemo(
+    () => [
+      activeTimeline?.id,
+      activeTimeline?.keyframes,
+      activeTimeline?.labels,
+      initialStatesStoreDigest,
+      activeTimeline?.loop,
+      activeTimeline?.yoyo,
+      activeTimeline?.playbackType,
+      activeTimeline?.scrollLength,
+      activeTimeline?.scrollTriggerStart,
+      activeTimeline?.scrollTriggerEnd,
+      gsapTargetsAnimationDigest,
+      isScrollMode,
+      showScrollMarkers,
+      scrollLayoutKey,
+      pixiSettingsDigest,
+      pixiLayoutEpoch,
+      scrollTriggerLayerDigest,
+      sectionDigest,
+      pinHealEpoch,
+    ],
+    [
+      activeTimeline?.id,
+      activeTimeline?.keyframes,
+      activeTimeline?.labels,
+      initialStatesStoreDigest,
+      activeTimeline?.loop,
+      activeTimeline?.yoyo,
+      activeTimeline?.playbackType,
+      activeTimeline?.scrollLength,
+      activeTimeline?.scrollTriggerStart,
+      activeTimeline?.scrollTriggerEnd,
+      gsapTargetsAnimationDigest,
+      isScrollMode,
+      showScrollMarkers,
+      scrollLayoutKey,
+      pixiSettingsDigest,
+      pixiLayoutEpoch,
+      scrollTriggerLayerDigest,
+      sectionDigest,
+      pinHealEpoch,
+    ]
+  );
+
+  useLayoutEffect(() => {
+    registerPreviewTimelineKiller(() => {
+      layerTimelinesRef.current.forEach((layerTl) => {
+        layerTl.scrollTrigger?.kill(true);
+        layerTl.kill();
+      });
+      layerTimelinesRef.current.clear();
+      masterTimelineRef.current?.scrollTrigger?.kill(true);
+      masterTimelineRef.current?.kill();
+      masterTimelineRef.current = null;
+      timelineRef.current?.scrollTrigger?.kill(true);
+      timelineRef.current?.kill();
+      timelineRef.current = null;
+      scrollTriggerRef.current = null;
+    });
+    return () => registerPreviewTimelineKiller(null);
+  }, []);
 
   /** Callback play/scrub fuori dal corpo useGSAP: contextSafe evita setState dopo unmount. */
   const { contextSafe } = useGSAP({ scope: previewScopeRef });
+
+  useEffect(() => {
+    if (!initialStateLivePreview || !activeTimeline) return;
+
+    contextSafe(() => {
+      const scopeEl = previewScopeRef.current;
+      const targetId = initialStateLivePreview.targetId;
+      const target = activeTimeline.targets.find((t) => t.id === targetId);
+      if (!target || !scopeEl) return;
+
+      const esc =
+        typeof CSS !== "undefined" && typeof CSS.escape === "function"
+          ? CSS.escape(targetId)
+          : targetId.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const initial = initialStateLivePreview.transforms;
+
+      if (target.type === "pixi") {
+        applyPixiInitialState(target.id, initial);
+        renderAllPixiLayers();
+      } else if (target.type === "model3d") {
+        const root = getThreeLayerRoot(target.id);
+        if (root) {
+          applyThreeInitialState(root, initial);
+          renderAllThreeLayers();
+        }
+      } else {
+        const el = scopeEl.querySelector<HTMLElement>(
+          `[data-preview-target="${esc}"]`
+        );
+        if (!el) return;
+        const pathEl =
+          target.type === "svg" ? resolveSvgPathElement(el, target) : null;
+        let domTweenTarget: gsap.TweenTarget = el;
+        if (target.type === "text" && isActiveTextSplit(target.textSplit)) {
+          const textEl = resolvePreviewTextElement(el);
+          const existingSplit = splitInstancesRef.current.find((split) => {
+            const splitEl = split.elements?.[0] as Element | undefined;
+            return splitEl && textEl?.contains(splitEl);
+          });
+          if (existingSplit) {
+            domTweenTarget = splitTweenTarget(existingSplit, target.textSplit!);
+          }
+        }
+        applyInitialStateToTarget(el, initial, pathEl, domTweenTarget);
+        if (pathEl) measureSvgPath(pathEl);
+      }
+
+    })();
+  }, [
+    liveInitialPreviewDigest,
+    activeTimeline,
+    contextSafe,
+    initialStateLivePreview,
+  ]);
 
   const renderLayerChip = (
     target: NonNullable<typeof activeTimeline>["targets"][number],
@@ -166,49 +531,88 @@ export function PreviewArea() {
   ) => {
     if (!activeTimeline) return null;
     const isActive = activeTimeline.activeTargetId === target.id;
+    const previewStyle = resolveTargetStyleForPreview(
+      activeTimeline.id,
+      target,
+      layerStyleLivePreview
+    );
+    const targetForView = { ...target, style: previewStyle };
+    const textFullSection =
+      target.type === "text" &&
+      layerTextUsesFullViewportWidth(previewStyle);
+    const pixiFillsSection = false;
     return (
       <div
-        {...(target.type === "model3d"
-          ? {}
-          : { "data-preview-target": target.id })}
         className={cn(
-          "relative z-[1] pointer-events-auto flex flex-col items-center gap-1 [transform-style:preserve-3d]",
-          target.type === "model3d" && "overflow-visible shrink-0",
+          "relative z-[1] pointer-events-auto flex flex-col",
+          textFullSection ? "w-full max-w-full items-stretch" : "items-center",
+          (target.type === "model3d" || target.type === "pixi") &&
+            "overflow-visible shrink-0",
+          target.type === "code" && "w-full max-w-full",
+          pixiFillsSection && "absolute inset-0 w-full h-full max-w-none",
           isActive &&
             "outline outline-1 outline-primary/50 outline-offset-4 rounded-sm"
         )}
-        style={
-          target.type === "model3d"
-            ? undefined
-            : layerCustomCssToStyle(target.style)
-        }
         title={`${target.name} — ${target.selector}`}
       >
-        <PreviewTargetView
-          target={target}
-          model3dHostStyle={
-            target.type === "model3d"
-              ? layerCustomCssToStyle(target.style)
-              : undefined
-          }
-          onModel3dMeshesDiscovered={(targetId, names) => {
-            if (!activeTimeline) return;
-            const existing = activeTimeline.targets.find((t) => t.id === targetId)
-              ?.model3dMeshNames;
-            if (
-              existing &&
-              existing.length === names.length &&
-              existing.every((n, i) => n === names[i])
-            ) {
-              return;
-            }
-            updateTarget(activeTimeline.id, targetId, {
-              model3dMeshNames: names,
-            });
-          }}
-        />
+        <div
+          className={cn(
+            (textFullSection ||
+              target.type === "code" ||
+              target.type === "pixi") &&
+              "w-full max-w-full",
+            "[&_.layer-custom-css-host]:[transform-style:preserve-3d]"
+          )}
+          style={layerCustomCssToStyle(previewStyle)}
+        >
+          <div
+            {...(target.type === "model3d" ||
+            target.type === "pixi" ||
+            target.type === "text"
+              ? {}
+              : { "data-preview-target": target.id })}
+            className={cn(
+              "layer-custom-css-host [transform-style:preserve-3d]",
+              target.type === "text"
+                ? textFullSection
+                  ? "block w-full max-w-full"
+                  : "flex items-center justify-center"
+                : target.type === "pixi"
+                  ? "flex w-full max-w-full overflow-visible"
+                  : textFullSection
+                    ? "flex w-full max-w-full justify-center"
+                    : "flex items-center justify-center"
+            )}
+          >
+            <PreviewTargetView
+              key={`${target.id}-${target.shape ?? "square"}-${target.type}-${target.codeHtml?.length ?? 0}-${previewStyle?.textFullViewportWidth ? "fw" : "nw"}-${layerStyleToInlineString(previewStyle)}`}
+              target={targetForView}
+              previewTargetId={target.type === "text" ? target.id : undefined}
+              textFullWidthContext="viewport"
+              pixiSectionFill={false}
+            onModel3dMeshesDiscovered={(targetId, names) => {
+              if (!activeTimeline) return;
+              const existing = activeTimeline.targets.find(
+                (t) => t.id === targetId
+              )?.model3dMeshNames;
+              if (
+                existing &&
+                existing.length === names.length &&
+                existing.every((n, i) => n === names[i])
+              ) {
+                return;
+              }
+              updateTarget(activeTimeline.id, targetId, {
+                model3dMeshNames: names,
+              });
+            }}
+            />
+          </div>
+        </div>
         {showLayerLabel || isActive ? (
-          <span className="text-xxs text-muted-foreground">{target.name}</span>
+          <span className="pointer-events-none absolute left-1/2 top-full z-[1] mt-1 -translate-x-1/2 whitespace-nowrap text-xxs text-muted-foreground">
+            {target.name}
+          </span>
         ) : null}
       </div>
     );
@@ -230,12 +634,111 @@ export function PreviewArea() {
     ));
   };
 
+  const flowScrollTargets = useMemo(() => {
+    if (!activeTimeline || !isScrollMode || !usesSplitScrollPin(activeTimeline)) {
+      return [];
+    }
+    const members = sectionMemberIds(activeTimeline);
+    return activeTimeline.targets.filter(
+      (t) =>
+        !members.has(t.id) && (t.timePlayback === true || !t.scrollPin)
+    );
+  }, [activeTimeline, isScrollMode]);
+
+  const renderFlowScrollLayers = (
+    triggerSlotRef?: Ref<HTMLDivElement>
+  ) => {
+    if (!activeTimeline) return null;
+    const showLayerLabel = activeTimeline.targets.length === 1;
+    const looseSections = resolveTimelineSections(activeTimeline).filter(
+      (section) => !sectionIsPinned(section)
+    );
+    const hasFlow = flowScrollTargets.length > 0 || looseSections.length > 0;
+    return (
+      <div
+        ref={triggerSlotRef}
+        className={cn(
+          "scroll-flow-layers px-4 flex flex-col items-stretch gap-24 w-full",
+          hasFlow ? "py-16" : "py-0 min-h-0"
+        )}
+        data-scroll-flow-host
+        aria-hidden={!hasFlow}
+      >
+        {flowScrollTargets.map((target) => (
+          <div
+            key={target.id}
+            className="flow-layer-slot relative min-h-48 w-full flex items-center justify-center pointer-events-none"
+          >
+            {renderLayerChip(target, showLayerLabel)}
+          </div>
+        ))}
+        {looseSections.map((section) => renderSectionBlock(section, false))}
+      </div>
+    );
+  };
+
+  const renderSectionBlock = (
+    section: ReturnType<typeof resolveTimelineSections>[number],
+    pinned: boolean
+  ) => (
+    <div
+      key={section.id}
+      className={
+        pinned
+          ? "pin-layer-section relative flex w-full shrink-0 items-center justify-center"
+          : "scroll-section relative flex min-h-48 w-full items-center justify-center"
+      }
+      style={pinned ? { height: "100cqh" } : undefined}
+      data-pin-section={pinned ? section.id : undefined}
+      data-scroll-section={section.id}
+    >
+      <div className="pointer-events-none flex flex-col items-center justify-center gap-8">
+        {section.layers.map((layer) => (
+          <div key={layer.id}>{renderLayerChip(layer, false)}</div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderPinSections = (triggerSlotRef?: Ref<HTMLDivElement>) => {
+    if (!activeTimeline || !usesSplitScrollPin(activeTimeline)) return null;
+    const members = sectionMemberIds(activeTimeline);
+    const pinned = activeTimeline.targets.filter(
+      (target) =>
+        target.scrollPin &&
+        target.timePlayback !== true &&
+        !members.has(target.id)
+    );
+    const pinnedSections = pinnedResolvedSections(activeTimeline);
+    return (
+      <>
+        {pinnedSections.map((section) => renderSectionBlock(section, true))}
+        {pinned.map((target) => (
+      <div
+        key={target.id}
+        ref={
+          triggerSlotRef && activeTimeline.activeTargetId === target.id
+            ? triggerSlotRef
+            : undefined
+        }
+        className="pin-layer-section relative flex w-full shrink-0 items-center justify-center"
+        style={{ height: "100cqh" }}
+        data-pin-section={target.id}
+      >
+        {renderLayerChip(target, true)}
+      </div>
+        ))}
+      </>
+    );
+  };
+
   const renderTargets = () => {
     if (!activeTimeline) return null;
     const boundsClass = normalizeBoundsClass(activeTimeline.boundsClass);
-    const splitPin = usesSplitScrollPin(activeTimeline);
-    const pinned = splitPin ? getScrollPinnedTargets(activeTimeline) : [];
-    const stageTargets = splitPin ? pinned : activeTimeline.targets;
+    const scrollPinLayout = timelineUsesScrollPinLayout(activeTimeline);
+    const stageTargets = activeTimeline.targets.filter((t) =>
+      layerBelongsToFullpageStage(activeTimeline, t)
+    );
     const css3d = stageCss3dStyle(activeTimeline);
 
     return (
@@ -243,7 +746,7 @@ export function PreviewArea() {
         className={cn(
           "relative w-full min-h-64",
           boundsClass,
-          splitPin && "pin-stage-host"
+          scrollPinLayout && "pin-stage-host"
         )}
         style={
           css3d
@@ -253,7 +756,7 @@ export function PreviewArea() {
               }
             : undefined
         }
-        {...(splitPin
+        {...(scrollPinLayout
           ? { [SCROLL_PIN_HOST_ATTR]: "true" }
           : { "data-preview-bounds": true })}
       >
@@ -267,13 +770,29 @@ export function PreviewArea() {
 
   useGSAP(
     () => {
+      const timelineData = timelineDataRef.current;
+      const activeTimeline = activeTimelineRef.current;
       if (!timelineData || !activeTimeline) return;
 
+      const scrollerOnEnter = scrollContainerRef.current;
+      if (isScrollMode && initialStateLivePreviewRef.current && scrollerOnEnter) {
+        if (scrollTopPreserveRef.current === null) {
+          scrollTopPreserveRef.current = scrollerOnEnter.scrollTop;
+        }
+      }
+
       const scopeEl = previewScopeRef.current;
-      const resolveTarget = (targetId: string) =>
-        scopeEl?.querySelector<HTMLElement>(
-          `[data-preview-target="${targetId}"]`
-        ) ?? null;
+      const resolveTarget = (targetId: string) => {
+        const esc =
+          typeof CSS !== "undefined" && typeof CSS.escape === "function"
+            ? CSS.escape(targetId)
+            : targetId.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        return (
+          scopeEl?.querySelector<HTMLElement>(
+            `[data-preview-target="${esc}"]`
+          ) ?? null
+        );
+      };
 
       let cancelled = false;
       let attempts = 0;
@@ -284,6 +803,9 @@ export function PreviewArea() {
         const allMounted = timelineData.targets.every((t) => {
           if (t.type === "model3d") {
             return Boolean(t.model3dUrl?.trim()) && isThreeLayerReady(t.id);
+          }
+          if (t.type === "pixi") {
+            return isPixiLayerReady(t.id);
           }
           const el = resolveTarget(t.id);
           if (!el) return false;
@@ -341,44 +863,118 @@ export function PreviewArea() {
           }
         }
 
+        layerTimelinesRef.current.forEach((layerTl) => {
+          layerTl.scrollTrigger?.kill(true);
+          layerTl.kill();
+        });
+        layerTimelinesRef.current.clear();
+        masterTimelineRef.current?.scrollTrigger?.kill(true);
+        masterTimelineRef.current?.kill();
+        masterTimelineRef.current = null;
+        timelineRef.current?.scrollTrigger?.kill(true);
         timelineRef.current?.kill();
+        timelineRef.current = null;
         scrollTriggerRef.current = null;
         splitInstancesRef.current.forEach((split) => split.revert());
         splitInstancesRef.current = [];
         killDraggables(dragInstancesRef.current);
         dragInstancesRef.current = [];
+        registerKeyframeEases(timelineData.keyframes);
 
-        const scrollTriggerVars =
+        const grouped = partitionScrollPlayback(
+          isScrollMode
+            ? targetsOutsideSectionScrub(activeTimeline)
+            : timelineData.targets
+        );
+        const timed = isScrollMode ? grouped.timed : [];
+        const pinned = isScrollMode ? grouped.pinned : [];
+        const own = isScrollMode ? grouped.own : [];
+        const sectionPins = isScrollMode
+          ? pinnedResolvedSections(activeTimeline)
+          : [];
+        const shared = isScrollMode
+          ? [...grouped.shared, ...looseSectionTargets(activeTimeline)]
+          : timelineData.targets;
+        const scrollScroller = scrollContainerRef.current;
+        const scrollMarkers = showScrollMarkers;
+        const flowHost = scopeEl?.querySelector<HTMLElement>(
+          "[data-scroll-flow-host]"
+        );
+        const masterTriggerEl =
+          pinned.length > 0 || sectionPins.length > 0
+            ? flowHost ?? null
+            : triggerRef.current;
+
+        const needsMasterScroll = Boolean(
           isScrollMode &&
-          triggerRef.current &&
-          scrollContainerRef.current
-            ? buildScrollTriggerVars(activeTimeline, triggerRef.current, {
-                scroller: scrollContainerRef.current,
-                markers: showScrollMarkers,
-              })
+            masterTriggerEl &&
+            scrollScroller &&
+            shared.length > 0
+        );
+
+        const masterScrollTrigger =
+          needsMasterScroll && masterTriggerEl
+            ? pinned.length > 0
+              ? {
+                  trigger: masterTriggerEl,
+                  start: activeTimeline.scrollTriggerStart?.trim() || "top center",
+                  end: resolveScrollEnd(
+                    activeTimeline.scrollLength,
+                    activeTimeline.scrollTriggerEnd
+                  ),
+                }
+              : resolvePinnedMasterScrollTrigger(
+                  activeTimeline,
+                  masterTriggerEl,
+                  resolveTarget,
+                  scopeEl
+                )
+            : null;
+        const scrollTriggerVars =
+          needsMasterScroll && masterScrollTrigger
+            ? buildScrollTriggerVars(
+                activeTimeline,
+                masterScrollTrigger.trigger,
+                {
+                  ...(scrollScroller ? { scroller: scrollScroller } : {}),
+                  markers: scrollMarkers,
+                  start: masterScrollTrigger.start,
+                  end: masterScrollTrigger.end,
+                  refreshPriority: pinned.length + 1,
+                }
+              )
             : undefined;
 
-        const tl = gsap.timeline({
-          ...getTimelineGsapOptions(activeTimeline),
-          ...(scrollTriggerVars ? { scrollTrigger: scrollTriggerVars } : {}),
-          onUpdate: contextSafe(() => {
+        const attachScrollTimeSync = (
+          syncTl: gsap.core.Timeline,
+          ownerTargetId: string | null
+        ) => {
+          if (!isScrollMode || !syncTl.scrollTrigger) return;
+          const st = syncTl.scrollTrigger as ScrollTrigger;
+          st.vars.onUpdate = contextSafe((self: ScrollTrigger) => {
             renderAllThreeLayers();
-            if (timelineRef.current && !isScrollMode) {
-              setCurrentTime(timelineRef.current.time());
+            renderAllPixiLayers();
+            if (
+              shouldSyncScrollPlayhead(
+                activeTimeline.activeTargetId,
+                timelineData.targets,
+                ownerTargetId
+              )
+            ) {
+              scrollDrivenPlayheadRef.current = true;
+              setCurrentTime(self.progress * syncTl.duration());
             }
-          }),
-          onComplete: contextSafe(() => {
-            if (!isScrollMode && !timelineData.loop) {
-              setPlaying(false);
-              setCurrentTime(0);
-            }
-          }),
-        });
+          });
+        };
 
-        timelineData.targets.forEach((target) => {
+        const appendTargetToTimeline = (
+          destTl: gsap.core.Timeline,
+          target: (typeof timelineData.targets)[0]
+        ) => {
           const initial = timelineData.initialStates[target.id];
           const layerKeyframes = timelineData.keyframes.filter(
-            (k) => k.targetId === target.id
+            (k) =>
+              (k.targetId ?? activeTimeline.activeTargetId) === target.id
           );
           const steps = buildTweenSteps(layerKeyframes, initial);
 
@@ -386,7 +982,14 @@ export function PreviewArea() {
             const root = getThreeLayerRoot(target.id);
             if (!root) return;
             applyThreeInitialState(root, initial);
-            appendThreeTweenStepsToTimeline(tl, root, steps);
+            appendThreeTweenStepsToTimeline(destTl, root, steps);
+            return;
+          }
+
+          if (target.type === "pixi") {
+            if (!isPixiLayerReady(target.id)) return;
+            applyPixiInitialState(target.id, initial);
+            appendPixiTweenStepsToTimeline(destTl, target.id, steps);
             return;
           }
 
@@ -419,17 +1022,146 @@ export function PreviewArea() {
             primeSvgPluginState(pathEl, steps, initial);
           }
 
-          appendTweenStepsToTimeline(tl, el, steps, pathEl, domTweenTarget);
+          appendTweenStepsToTimeline(destTl, el, steps, pathEl, domTweenTarget);
+        };
+
+        timed.forEach((target) => {
+          const layerTl = gsap.timeline({
+            paused: false,
+            repeat: activeTimeline.loop ? -1 : 0,
+            yoyo: Boolean(activeTimeline.loop && activeTimeline.yoyo),
+            onUpdate: contextSafe(() => {
+              renderAllThreeLayers();
+              renderAllPixiLayers();
+            }),
+          });
+          addLabelsToTimeline(layerTl, activeTimeline.labels);
+          appendTargetToTimeline(layerTl, target);
+          layerTimelinesRef.current.set(target.id, layerTl);
         });
 
-        timelineRef.current = tl;
-
-        if (isScrollMode && tl.scrollTrigger) {
-          const st = tl.scrollTrigger as ScrollTrigger;
-          st.vars.onUpdate = contextSafe((self: ScrollTrigger) => {
-            renderAllThreeLayers();
-            setCurrentTime(self.progress * tl.duration());
+        if (triggerRef.current && scrollScroller) {
+          own.forEach((target) => {
+            const layerEl = resolveTarget(target.id);
+            const stageTrigger = triggerRef.current!;
+            const triggerEl = resolveLayerScrollTriggerElement(
+              scopeEl,
+              target,
+              layerEl,
+              stageTrigger
+            );
+            const layerScrollVars = buildScrollTriggerVarsForTarget(
+              activeTimeline,
+              target,
+              triggerEl,
+              {
+                scroller: scrollScroller,
+                markers: scrollMarkers,
+                refreshPriority: pinned.length + 1,
+              }
+            );
+            const layerTl = gsap.timeline({
+              ...getTimelineGsapOptions(activeTimeline),
+              scrollTrigger: layerScrollVars,
+            });
+            addLabelsToTimeline(layerTl, activeTimeline.labels);
+            appendTargetToTimeline(layerTl, target);
+            attachScrollTimeSync(layerTl, target.id);
+            layerTimelinesRef.current.set(target.id, layerTl);
           });
+        }
+
+        if (isScrollMode && scrollScroller && scopeEl) {
+          const pinCount = sectionPins.length + pinned.length;
+          sectionPins.forEach((section, index) => {
+            const esc =
+              typeof CSS !== "undefined" && typeof CSS.escape === "function"
+                ? CSS.escape(section.id)
+                : section.id.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+            const sectionEl = scopeEl.querySelector<HTMLElement>(
+              `[data-pin-section="${esc}"]`
+            );
+            if (!sectionEl) return;
+            const sectionTl = gsap.timeline({
+              ...getTimelineGsapOptions(activeTimeline),
+              scrollTrigger: buildPinnedSectionScrollTriggerVars(
+                activeTimeline,
+                { id: section.id } as (typeof timelineData.targets)[number],
+                sectionEl,
+                {
+                  scroller: scrollScroller,
+                  markers: scrollMarkers,
+                  refreshPriority: pinCount - index,
+                }
+              ),
+            });
+            addLabelsToTimeline(sectionTl, activeTimeline.labels);
+            sectionScrubLayers(section).forEach((layer) => {
+              appendTargetToTimeline(sectionTl, layer);
+              layerTimelinesRef.current.set(layer.id, sectionTl);
+            });
+            attachScrollTimeSync(sectionTl, section.layers[0]?.id ?? null);
+          });
+          pinned.forEach((target, index) => {
+            const esc =
+              typeof CSS !== "undefined" && typeof CSS.escape === "function"
+                ? CSS.escape(target.id)
+                : target.id.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+            const section = scopeEl.querySelector<HTMLElement>(
+              `[data-pin-section="${esc}"]`
+            );
+            if (!section) return;
+            const layerTl = gsap.timeline({
+              ...getTimelineGsapOptions(activeTimeline),
+              scrollTrigger: buildPinnedSectionScrollTriggerVars(
+                activeTimeline,
+                target,
+                section,
+                {
+                  scroller: scrollScroller,
+                  markers: scrollMarkers,
+                  refreshPriority: pinCount - (sectionPins.length + index),
+                }
+              ),
+            });
+            addLabelsToTimeline(layerTl, activeTimeline.labels);
+            appendTargetToTimeline(layerTl, target);
+            attachScrollTimeSync(layerTl, target.id);
+            layerTimelinesRef.current.set(target.id, layerTl);
+          });
+        }
+
+        const tl = gsap.timeline({
+          ...getTimelineGsapOptions(activeTimeline),
+          ...(scrollTriggerVars ? { scrollTrigger: scrollTriggerVars } : {}),
+          onUpdate: contextSafe(() => {
+            renderAllThreeLayers();
+            renderAllPixiLayers();
+            if (timelineRef.current && !isScrollMode) {
+              setCurrentTime(timelineRef.current.time());
+            }
+          }),
+          onComplete: contextSafe(() => {
+            if (!isScrollMode && !timelineData.loop) {
+              setPlaying(false);
+              setCurrentTime(0);
+            }
+          }),
+        });
+        addLabelsToTimeline(tl, activeTimeline.labels);
+
+        shared.forEach((target) => appendTargetToTimeline(tl, target));
+        attachScrollTimeSync(tl, null);
+
+        masterTimelineRef.current = tl;
+        const activeTarget = timelineData.targets.find(
+          (t) => t.id === activeTimeline.activeTargetId
+        );
+        if (activeTarget && layerHasOwnScrollTimeline(activeTarget)) {
+          timelineRef.current =
+            layerTimelinesRef.current.get(activeTarget.id) ?? tl;
+        } else {
+          timelineRef.current = tl;
         }
 
         if (timelineUsesDraggable(activeTimeline)) {
@@ -449,14 +1181,19 @@ export function PreviewArea() {
           );
         }
 
-        if (isScrollMode && tl.scrollTrigger) {
-          scrollTriggerRef.current = tl.scrollTrigger as ScrollTrigger;
+        if (isScrollMode) {
+          const primarySt = timelineRef.current?.scrollTrigger as
+            | ScrollTrigger
+            | undefined;
+          scrollTriggerRef.current = primarySt ?? null;
           ScrollTrigger.refresh();
-          requestAnimationFrame(() => ScrollTrigger.refresh());
+          restoreScrollAfterStKill();
+          ScrollTrigger.update();
         } else if (isPlaying) {
           tl.play();
         } else {
           tl.pause(0);
+          layerTimelinesRef.current.forEach((layerTl) => layerTl.pause(0));
         }
       };
 
@@ -464,10 +1201,29 @@ export function PreviewArea() {
 
       return () => {
         cancelled = true;
+        const pinRevert = !initialStateLivePreviewRef.current;
+        activeTimeline.targets
+          .filter((t) => t.type === "pixi")
+          .forEach((t) => killPixiLayerGsapTweens(t.id));
+        killPreviewTimelineNow();
+        layerTimelinesRef.current.forEach((layerTl) => {
+          layerTl.scrollTrigger?.kill(pinRevert);
+          layerTl.kill();
+        });
+        layerTimelinesRef.current.clear();
+        masterTimelineRef.current?.scrollTrigger?.kill(pinRevert);
+        masterTimelineRef.current?.kill();
+        masterTimelineRef.current = null;
+        timelineRef.current?.scrollTrigger?.kill(pinRevert);
+        timelineRef.current?.kill();
+        timelineRef.current = null;
+        scrollTriggerRef.current = null;
         splitInstancesRef.current.forEach((split) => split.revert());
         splitInstancesRef.current = [];
         killDraggables(dragInstancesRef.current);
         dragInstancesRef.current = [];
+        killAllPreviewScrollTriggers(pinRevert);
+        restoreScrollAfterStKill();
       };
     },
     {
@@ -476,6 +1232,29 @@ export function PreviewArea() {
       revertOnUpdate: true,
     }
   );
+
+  useLayoutEffect(() => {
+    if (!isScrollMode || !activeTimeline) {
+      pinHealAttemptsRef.current = 0;
+      return;
+    }
+    const needsPin = usesSplitScrollPin(activeTimeline);
+    if (!needsPin) {
+      pinHealAttemptsRef.current = 0;
+      return;
+    }
+    const scope = previewScopeRef.current;
+    const sections = scope?.querySelectorAll("[data-pin-section]").length ?? 0;
+    const spacers = scope?.querySelectorAll(".pin-spacer").length ?? 0;
+    if (sections > 0 && spacers > 0) {
+      pinHealAttemptsRef.current = 0;
+      return;
+    }
+    if (sections > 0 && spacers === 0 && pinHealAttemptsRef.current < 2) {
+      pinHealAttemptsRef.current += 1;
+      setPinHealEpoch((epoch) => epoch + 1);
+    }
+  }, [isScrollMode, activeTimeline, gsapTargetsAnimationDigest, scrollTriggerLayerDigest, sectionDigest, pinHealEpoch]);
 
   useEffect(() => {
     contextSafe(() => {
@@ -489,13 +1268,62 @@ export function PreviewArea() {
   }, [isPlaying, isScrollMode, contextSafe]);
 
   useEffect(() => {
+    if (!isScrollMode || !activeTimeline) return;
+    const activeId = activeTimeline.activeTargetId;
+    const activeTarget = activeTimeline.targets.find((t) => t.id === activeId);
+    if (activeTarget && layerHasOwnScrollTimeline(activeTarget)) {
+      const layerTl = layerTimelinesRef.current.get(activeId);
+      if (layerTl) {
+        timelineRef.current = layerTl;
+        const st = layerTl.scrollTrigger as ScrollTrigger | undefined;
+        scrollTriggerRef.current = st ?? null;
+      }
+    } else if (masterTimelineRef.current) {
+      timelineRef.current = masterTimelineRef.current;
+      const st = masterTimelineRef.current.scrollTrigger as
+        | ScrollTrigger
+        | undefined;
+      scrollTriggerRef.current = st ?? null;
+    }
+  }, [
+    activeTimeline?.activeTargetId,
+    activeTimeline,
+    isScrollMode,
+  ]);
+
+  useEffect(() => {
     contextSafe(() => {
-      if (!timelineRef.current || isPlaying) return;
-      timelineRef.current.pause();
-      timelineRef.current.time(currentTime);
+      if (isPlaying) return;
+      if (isScrollMode && scrollDrivenPlayheadRef.current) {
+        scrollDrivenPlayheadRef.current = false;
+        return;
+      }
+      if (initialStateLivePreview) return;
+
+      const activeId = activeTimeline?.activeTargetId;
+      const activeTarget = activeTimeline?.targets.find(
+        (t) => t.id === activeId
+      );
+      const scrubTl =
+        activeTarget && layerHasOwnScrollTimeline(activeTarget)
+          ? layerTimelinesRef.current.get(activeTarget.id) ??
+            masterTimelineRef.current
+          : masterTimelineRef.current ?? timelineRef.current;
+
+      if (!scrubTl) return;
+      scrubTl.pause();
+      scrubTl.time(currentTime);
       renderAllThreeLayers();
+      renderAllPixiLayers();
     })();
-  }, [currentTime, isPlaying, contextSafe]);
+  }, [
+    currentTime,
+    isPlaying,
+    isScrollMode,
+    contextSafe,
+    activeTimeline,
+    initialStateLivePreview,
+  ]);
 
   const scrollEndMode = activeTimeline
     ? inferScrollEndMode(
@@ -533,15 +1361,29 @@ export function PreviewArea() {
     },
   });
 
+  const scrollPinRevertKey = isScrollMode
+    ? `${activeTimeline?.id ?? ""}:${gsapTargetsAnimationDigest}:${scrollTriggerLayerDigest}:${sectionDigest}`
+    : "";
+  if (scrollPinRevertKeyRef.current !== scrollPinRevertKey) {
+    const hadPinnedScroll = Boolean(scrollPinRevertKeyRef.current);
+    scrollPinRevertKeyRef.current = scrollPinRevertKey;
+    if (hadPinnedScroll) killAllPreviewScrollTriggers(true);
+  }
+
   if (!activeTimeline) {
     return null;
   }
+
+  const splitScrollPin = usesSplitScrollPin(activeTimeline);
+  const activePinLayer = activeTimeline.targets.some(
+    (target) => target.id === activeTimeline.activeTargetId && target.scrollPin
+  );
 
   const pageBackground = resolveTimelineBackground(activeTimeline);
 
   return (
   <>
-      <GoogleFontsLoader targets={activeTimeline.targets} />
+      <GoogleFontsLoader targets={previewTargetsWithLiveStyle} />
       {cssRuleStyles ? (
         <style id="preview-css-rules">{cssRuleStyles}</style>
       ) : null}
@@ -595,8 +1437,13 @@ export function PreviewArea() {
         {isScrollMode ? (
           <div
             ref={scrollContainerRef}
+            id="scroller"
+            data-preview-scroller=""
             className="relative flex-1 min-h-0 h-full overflow-y-auto scrollbar-none rounded-lg border border-border w-full"
-            style={pageBackground ? { background: pageBackground } : undefined}
+            style={{
+              ...(pageBackground ? { background: pageBackground } : {}),
+              containerType: "size",
+            }}
           >
             <ScrollTriggerViewportOverlay
               startViewportPercent={scrollVisual.startViewportPercent}
@@ -604,11 +1451,13 @@ export function PreviewArea() {
               scrollEndMode={scrollEndMode}
               scrollerHeight={scrollVisual.scrollerHeight}
               onStartDrag={() => scrollVisual.setDragging("startViewport")}
-              onEndViewportDrag={() => scrollVisual.setDragging("endViewport")}
+              onEndViewportDrag={() =>
+                scrollVisual.setDragging("endViewport")
+              }
             />
-            <div
+            <ScrollPreviewScrollBody
+              key={scrollLayoutKey}
               ref={scrollContentRef}
-              className="min-h-[200vh] relative"
             >
               {scrollEndMode === "relative" ? (
                 <ScrollTriggerEndLine
@@ -618,26 +1467,13 @@ export function PreviewArea() {
                 />
               ) : null}
               <div className="h-[40vh]" />
-              {usesSplitScrollPin(activeTimeline) ? (
-                <div
-                  className="relative mx-4 py-16 space-y-24"
-                  data-preview-scroll-flow
-                >
-                  {activeTimeline.targets
-                    .filter((t) => !t.scrollPin)
-                    .map((target) => (
-                      <div
-                        key={target.id}
-                        className="relative min-h-48 flex items-center justify-center"
-                      >
-                        {renderLayerChip(
-                          target,
-                          activeTimeline.targets.length === 1
-                        )}
-                      </div>
-                    ))}
-                </div>
-              ) : null}
+              {renderFlowScrollLayers(
+                splitScrollPin && !activePinLayer ? triggerRef : undefined
+              )}
+              {renderPinSections(
+                splitScrollPin && activePinLayer ? triggerRef : undefined
+              )}
+              {splitScrollPin ? null : (
               <div
                 ref={triggerRef}
                 className="preview-trigger relative bg-transparent rounded-lg mx-4 p-8 min-h-64 flex items-center justify-center"
@@ -656,14 +1492,17 @@ export function PreviewArea() {
                 ) : null}
                 {renderTargets()}
               </div>
+              )}
               <div className="h-[80vh]" />
-            </div>
+            </ScrollPreviewScrollBody>
           </div>
         ) : (
           <div
             className={cn(
               "rounded-lg border border-border/40 p-8 flex-1 min-h-0 h-full w-full flex items-center justify-center relative",
-              activeTimeline && timelineUsesModel3d(activeTimeline)
+              activeTimeline &&
+              (timelineUsesModel3d(activeTimeline) ||
+                timelineUsesPixi(activeTimeline))
                 ? "overflow-visible"
                 : "overflow-hidden"
             )}

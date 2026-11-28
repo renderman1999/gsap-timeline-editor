@@ -9,7 +9,12 @@ import {
 import { DEFAULT_MOTION_PATH_SELECTOR } from "@/lib/gsap-motion-path";
 import { DEFAULT_LAYER_SVG } from "@/lib/svg-sanitize";
 import { DEFAULT_MODEL3D_SCENE } from "@/lib/model3d-scene";
+import { DEFAULT_CODE_HTML, DEFAULT_CODE_JS } from "@/lib/code-layer";
+import { DEFAULT_PIXI_SCENE } from "@/lib/pixi-scene";
 import { normalizeModel3dInteraction } from "@/lib/model3d-interaction";
+import { normalizeTimelineLabels } from "@/lib/gsap-labels";
+import { normalizeTimelineSections } from "@/lib/timeline-sections";
+import { normalizeEditorMode } from "@/lib/timeline-editor-mode";
 import type {
   AnimationTarget,
   AnimationTargetType,
@@ -45,6 +50,7 @@ export function createAnimationTarget(
         ? partial?.imageUrl ??
           "https://picsum.photos/seed/gsap-layer/160/160"
         : partial?.imageUrl,
+    imageWidth: partial?.type === "image" ? partial?.imageWidth : undefined,
     model3dUrl: partial?.type === "model3d" ? partial?.model3dUrl : undefined,
     model3dScene:
       partial?.type === "model3d"
@@ -61,12 +67,36 @@ export function createAnimationTarget(
       (type === "svg" ? DEFAULT_LAYER_SVG : undefined),
     svgPathSelector:
       partial?.svgPathSelector ?? (type === "svg" ? "#draw-path" : undefined),
+    codeHtml:
+      type === "code" ? (partial?.codeHtml ?? DEFAULT_CODE_HTML) : undefined,
+    codeJs: type === "code" ? (partial?.codeJs ?? DEFAULT_CODE_JS) : undefined,
+    pixiScene:
+      type === "pixi" ? (partial?.pixiScene ?? DEFAULT_PIXI_SCENE) : undefined,
+    pixiSettings: type === "pixi" ? partial?.pixiSettings : undefined,
     motionPathSelector:
       partial?.motionPathSelector ?? DEFAULT_MOTION_PATH_SELECTOR,
     draggable: partial?.draggable ?? { ...DEFAULT_DRAGGABLE_CONFIG },
+    scrollTriggerOwn: partial?.scrollTriggerOwn,
+    scrollTriggerStart: partial?.scrollTriggerStart,
+    scrollTriggerEnd: partial?.scrollTriggerEnd,
+    scrollTriggerScrollLength: partial?.scrollTriggerScrollLength,
+    scrollTriggerSelector: partial?.scrollTriggerSelector,
     scrollPin: partial?.scrollPin,
+    timePlayback: partial?.timePlayback,
     style: partial?.style,
   };
+}
+
+function normalizeTimelineScrollFields(
+  timeline: Partial<Timeline> & { playbackType?: Timeline["playbackType"] }
+): Pick<Timeline, "scrollLayout"> {
+  const scrollLayout =
+    timeline.playbackType === "scroll" ? "default" : undefined;
+  return { scrollLayout };
+}
+
+function normalizeTimelineExtraFields(timeline: Partial<Timeline> & { id?: string }) {
+  return { editorMode: normalizeEditorMode(timeline.editorMode, timeline) };
 }
 
 export function normalizeTimeline(timeline: Timeline | Partial<Timeline> & { id: string; name: string; keyframes: Keyframe[] }): Timeline {
@@ -85,14 +115,18 @@ export function normalizeTimeline(timeline: Timeline | Partial<Timeline> & { id:
     ) {
       initialStates[defaultId] = timeline.initialState;
     }
+    const playbackType = timeline.playbackType ?? "normal";
+
     return {
       id: timeline.id,
       name: timeline.name,
-      playbackType: timeline.playbackType ?? "normal",
+      ...normalizeTimelineExtraFields(timeline),
+      playbackType,
       scrollLength: timeline.scrollLength,
       scrollTriggerStart: timeline.scrollTriggerStart,
       scrollTriggerEnd: timeline.scrollTriggerEnd,
       scrollEndMode: timeline.scrollEndMode,
+      ...normalizeTimelineScrollFields({ ...timeline, playbackType }),
       loop: timeline.loop ?? false,
       yoyo: timeline.yoyo ?? false,
       previewBackground: timeline.previewBackground,
@@ -105,6 +139,8 @@ export function normalizeTimeline(timeline: Timeline | Partial<Timeline> & { id:
       ),
       stagePerspective: timeline.stagePerspective,
       keyframes,
+      labels: normalizeTimelineLabels(timeline.labels),
+      sections: normalizeTimelineSections(timeline.sections, targetIds),
       targets: timeline.targets.map((t) => {
         const draggable = t.draggable ?? { ...DEFAULT_DRAGGABLE_CONFIG };
         return {
@@ -144,14 +180,18 @@ export function normalizeTimeline(timeline: Timeline | Partial<Timeline> & { id:
     initialStates[DEFAULT_TARGET_ID] = timeline.initialState;
   }
 
+  const playbackType = timeline.playbackType ?? "normal";
+
   return {
     id: timeline.id,
     name: timeline.name,
-    playbackType: timeline.playbackType ?? "normal",
+    ...normalizeTimelineExtraFields(timeline),
+    playbackType,
     scrollLength: timeline.scrollLength,
     scrollTriggerStart: timeline.scrollTriggerStart,
     scrollTriggerEnd: timeline.scrollTriggerEnd,
     scrollEndMode: timeline.scrollEndMode,
+    ...normalizeTimelineScrollFields({ ...timeline, playbackType }),
     loop: timeline.loop ?? false,
     yoyo: timeline.yoyo ?? false,
     previewBackground: timeline.previewBackground,
@@ -164,6 +204,7 @@ export function normalizeTimeline(timeline: Timeline | Partial<Timeline> & { id:
     ),
     stagePerspective: timeline.stagePerspective,
     keyframes,
+    labels: normalizeTimelineLabels(timeline.labels),
     targets: [mainTarget],
     initialStates,
     activeTargetId: DEFAULT_TARGET_ID,

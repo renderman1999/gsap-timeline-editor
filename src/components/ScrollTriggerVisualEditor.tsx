@@ -341,10 +341,11 @@ export function ScrollTriggerViewportOverlay({
   if (scrollerHeight <= 0) return null;
 
   return (
-    <div
-      className="sticky top-0 left-0 right-0 z-20 pointer-events-none"
-      style={{ height: scrollerHeight }}
-    >
+    <div className="sticky top-0 left-0 right-0 z-20 h-0 pointer-events-none">
+      <div
+        className="absolute left-0 right-0"
+        style={{ height: scrollerHeight }}
+      >
       <div
         className="absolute left-0 right-0 border-t-2 border-emerald-500 pointer-events-auto cursor-ns-resize"
         style={{ top: `${startViewportPercent}%` }}
@@ -372,6 +373,7 @@ export function ScrollTriggerViewportOverlay({
           </span>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

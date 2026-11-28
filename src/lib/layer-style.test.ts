@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { layerStyleToCss, layerStyleToInlineString } from "./layer-style";
+import {
+  layerCustomCssToStyle,
+  layerStyleToCss,
+  layerStyleToInlineString,
+} from "./layer-style";
 
 describe("layer-style", () => {
   it("preserves CSS custom properties for React style", () => {
@@ -9,6 +13,15 @@ describe("layer-style", () => {
     expect(css).toEqual({
       "--my-color": "#f00",
       "--accent": "blue",
+    });
+  });
+
+  it("parses transform in custom css", () => {
+    expect(
+      layerCustomCssToStyle({ customCss: "transform: scaleY(-1);" })
+    ).toEqual({
+      transform: "scaleY(-1)",
+      transformOrigin: "top center",
     });
   });
 

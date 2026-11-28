@@ -40,16 +40,18 @@ import {
 import { MotionPathTransformFields } from "@/components/MotionPathTransformFields";
 import { SvgPluginTransformFields } from "@/components/SvgPluginTransformFields";
 import {
-  TransformDegreeField,
-  TransformZDepthField,
-} from "@/components/Css3dTransformFields";
-import {
   CORE_TRANSFORM_OPTIONS,
   CSS3D_TRANSFORM_OPTIONS,
   SVG_TRANSFORM_OPTIONS,
+  transformAllowsMultiple,
 } from "@/constants/transform-options";
+import { ExtraTransformFields } from "@/components/ExtraTransformFields";
+import {
+  GsapValueInput,
+  RotationValueFields,
+} from "@/components/GsapValueInput";
+import { KeyframeGsapOptions } from "@/components/KeyframeGsapOptions";
 import { defaultValuesForTransformType } from "@/lib/transform-defaults";
-import { isActiveTextSplit } from "@/lib/gsap-split-text";
 import {
   type AnimationTarget,
   type Keyframe,
@@ -71,15 +73,9 @@ interface KeyframeDialogProps {
     easing: string;
     transforms: Transform[];
   };
-  onSave: (keyframeData: {
-    targetId: string;
-    delay: number;
-    duration: number;
-    easing: string;
-    stagger?: number;
-    transforms: Transform[];
-  }) => void;
+  onSave: (keyframeData: Omit<Keyframe, "id">) => void;
   onCancel: () => void;
+  labelNames?: string[];
 }
 
 export function KeyframeDialog({
@@ -92,13 +88,13 @@ export function KeyframeDialog({
   targets,
   onSave,
   onCancel,
+  labelNames,
 }: KeyframeDialogProps) {
-  const [keyframeForm, setKeyframeForm] = useState({
+  const [keyframeForm, setKeyframeForm] = useState<Omit<Keyframe, "id">>({
     targetId: targets[0]?.id ?? "",
     delay: 0,
     duration: 1000,
     easing: "power2.out",
-    stagger: undefined as number | undefined,
     transforms: [] as Transform[],
   });
 
@@ -113,12 +109,11 @@ export function KeyframeDialog({
     if (isOpen) {
       if (mode === "edit" && keyframe) {
         const { order, type } = parseEasing(keyframe.easing);
+        const { id, ...draft } = keyframe;
+        void id;
         setKeyframeForm({
+          ...draft,
           targetId: keyframe.targetId ?? targets[0]?.id ?? "",
-          delay: keyframe.delay,
-          duration: keyframe.duration,
-          easing: keyframe.easing,
-          stagger: keyframe.stagger,
           transforms: [...keyframe.transforms],
         });
         setEasingOrder(order);
@@ -130,7 +125,6 @@ export function KeyframeDialog({
           delay: initialData.delay,
           duration: initialData.duration,
           easing: initialData.easing,
-          stagger: undefined,
           transforms: [...initialData.transforms],
         });
         setEasingOrder(order);
@@ -145,7 +139,6 @@ export function KeyframeDialog({
       delay: 0,
       duration: 1000,
       easing: "power2.inOut",
-      stagger: undefined,
       transforms: [],
     });
   };
@@ -162,11 +155,7 @@ export function KeyframeDialog({
     const existingTransform = keyframeForm.transforms.find(
       (t) => t.type === type
     );
-    if (
-      existingTransform &&
-      type !== "cssRule" &&
-      type !== "cssVar"
-    ) {
+    if (existingTransform && !transformAllowsMultiple(type)) {
       return;
     }
 
@@ -217,15 +206,23 @@ export function KeyframeDialog({
   ];
 
   const handleSave = () => {
-    const payload = { ...keyframeForm };
-  if (
-    !selectedTarget ||
-    !isActiveTextSplit(selectedTarget.textSplit) ||
-    payload.stagger == null ||
-    payload.stagger <= 0
-  ) {
-    delete payload.stagger;
-  }
+    const payload: Omit<Keyframe, "id"> = {
+      ...keyframeForm,
+      position: keyframeForm.position?.trim() || undefined,
+      stagger:
+        keyframeForm.stagger != null && keyframeForm.stagger > 0
+          ? keyframeForm.stagger
+          : undefined,
+      yoyo: keyframeForm.yoyo || undefined,
+      yoyoEase: keyframeForm.yoyoEase?.trim() || undefined,
+      clearProps: keyframeForm.clearProps?.trim() || undefined,
+      startAt: keyframeForm.startAt?.trim() || undefined,
+      onStart: keyframeForm.onStart?.trim() || undefined,
+      onUpdate: keyframeForm.onUpdate?.trim() || undefined,
+      onComplete: keyframeForm.onComplete?.trim() || undefined,
+      onRepeat: keyframeForm.onRepeat?.trim() || undefined,
+      onReverseComplete: keyframeForm.onReverseComplete?.trim() || undefined,
+    };
     onSave(payload);
     resetForm();
   };
@@ -239,110 +236,118 @@ export function KeyframeDialog({
     switch (transform.type) {
       case "move":
         return (
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1">
-              <Label>X:</Label>
-              <Input
-                type="number"
-                value={transform.values.x as number}
-                className="max-w-[4rem]"
-                onChange={(e) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    x: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
-              <span className="text-xs text-muted-foreground">px</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Label>Y:</Label>
-              <Input
-                type="number"
-                value={transform.values.y as number}
-                className="max-w-[4rem]"
-                onChange={(e) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    y: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
-              <span className="text-xs text-muted-foreground">px</span>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <GsapValueInput
+              label="X"
+              suffix="px"
+              value={transform.values.x}
+              onChange={(x) =>
+                updateTransform(transform.id, { ...transform.values, x })
+              }
+            />
+            <GsapValueInput
+              label="Y"
+              suffix="px"
+              value={transform.values.y}
+              onChange={(y) =>
+                updateTransform(transform.id, { ...transform.values, y })
+              }
+            />
+            <GsapValueInput
+              label="X%"
+              value={transform.values.xPercent}
+              onChange={(xPercent) =>
+                updateTransform(transform.id, { ...transform.values, xPercent })
+              }
+            />
+            <GsapValueInput
+              label="Y%"
+              value={transform.values.yPercent}
+              onChange={(yPercent) =>
+                updateTransform(transform.id, { ...transform.values, yPercent })
+              }
+            />
           </div>
         );
       case "scale":
         return (
-          <div className="flex items-center gap-8">
-            <div className="flex items-center gap-1">
-              <Label>X:</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                className="max-w-[4rem]"
-                value={transform.values.scaleX as number}
-                onChange={(e) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    scaleX: parseDecimalInput(e.target.value) || 1,
-                  })
-                }
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Label>Y:</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                className="max-w-[4rem]"
-                value={transform.values.scaleY as number}
-                onChange={(e) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    scaleY: parseDecimalInput(e.target.value) || 1,
-                  })
-                }
-              />
-            </div>
+          <div className="flex items-center gap-4">
+            <GsapValueInput
+              label="X"
+              step="0.01"
+              min={0}
+              value={transform.values.scaleX}
+              onChange={(scaleX) =>
+                updateTransform(transform.id, { ...transform.values, scaleX })
+              }
+            />
+            <GsapValueInput
+              label="Y"
+              step="0.01"
+              min={0}
+              value={transform.values.scaleY}
+              onChange={(scaleY) =>
+                updateTransform(transform.id, { ...transform.values, scaleY })
+              }
+            />
           </div>
         );
       case "rotate":
         return (
-          <TransformDegreeField
-            label=""
-            value={transform.values.rotation as number}
-            onChange={(rotation) =>
+          <RotationValueFields
+            value={transform.values.rotation}
+            direction={transform.values.rotationDir}
+            onValue={(rotation) =>
               updateTransform(transform.id, { ...transform.values, rotation })
+            }
+            onDirection={(rotationDir) =>
+              updateTransform(transform.id, {
+                ...transform.values,
+                rotationDir: rotationDir === "none" ? "" : rotationDir,
+              })
             }
           />
         );
       case "rotateX":
         return (
-          <TransformDegreeField
+          <RotationValueFields
             label="X"
-            value={transform.values.rotationX as number}
-            onChange={(rotationX) =>
+            value={transform.values.rotationX}
+            direction={transform.values.rotationXDir}
+            onValue={(rotationX) =>
               updateTransform(transform.id, { ...transform.values, rotationX })
+            }
+            onDirection={(rotationXDir) =>
+              updateTransform(transform.id, {
+                ...transform.values,
+                rotationXDir: rotationXDir === "none" ? "" : rotationXDir,
+              })
             }
           />
         );
       case "rotateY":
         return (
-          <TransformDegreeField
+          <RotationValueFields
             label="Y"
-            value={transform.values.rotationY as number}
-            onChange={(rotationY) =>
+            value={transform.values.rotationY}
+            direction={transform.values.rotationYDir}
+            onValue={(rotationY) =>
               updateTransform(transform.id, { ...transform.values, rotationY })
+            }
+            onDirection={(rotationYDir) =>
+              updateTransform(transform.id, {
+                ...transform.values,
+                rotationYDir: rotationYDir === "none" ? "" : rotationYDir,
+              })
             }
           />
         );
       case "moveZ":
         return (
-          <TransformZDepthField
-            value={transform.values.z as number}
+          <GsapValueInput
+            label="Z"
+            suffix="px"
+            value={transform.values.z}
             onChange={(z) =>
               updateTransform(transform.id, { ...transform.values, z })
             }
@@ -350,60 +355,35 @@ export function KeyframeDialog({
         );
       case "opacity":
         return (
-          <Input
-            type="number"
+          <GsapValueInput
             step="0.01"
-            min="0"
-            max="1"
-            className="max-w-[3rem] ml-1"
-            value={transform.values.opacity as number}
-            onChange={(e) =>
-              updateTransform(transform.id, {
-                ...transform.values,
-                opacity: parseDecimalInput(e.target.value) || 0,
-              })
+            min={0}
+            max={1}
+            value={transform.values.opacity}
+            onChange={(opacity) =>
+              updateTransform(transform.id, { ...transform.values, opacity })
             }
           />
         );
       case "skew":
         return (
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1">
-              <Label>X:</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="-180"
-                max="180"
-                className="max-w-[4rem]"
-                value={transform.values.skewX as number}
-                onChange={(e) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    skewX: parseDecimalInput(e.target.value) || 0,
-                  })
-                }
-              />
-              <span className="text-xs text-muted-foreground">deg</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Label>Y:</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="-180"
-                max="180"
-                className="max-w-[4rem]"
-                value={transform.values.skewY as number}
-                onChange={(e) =>
-                  updateTransform(transform.id, {
-                    ...transform.values,
-                    skewY: parseDecimalInput(e.target.value) || 0,
-                  })
-                }
-              />
-              <span className="text-xs text-muted-foreground">deg</span>
-            </div>
+            <GsapValueInput
+              label="X"
+              suffix="deg"
+              value={transform.values.skewX}
+              onChange={(skewX) =>
+                updateTransform(transform.id, { ...transform.values, skewX })
+              }
+            />
+            <GsapValueInput
+              label="Y"
+              suffix="deg"
+              value={transform.values.skewY}
+              onChange={(skewY) =>
+                updateTransform(transform.id, { ...transform.values, skewY })
+              }
+            />
           </div>
         );
       case "drawSvg":
@@ -480,7 +460,12 @@ export function KeyframeDialog({
           </div>
         );
       default:
-        return null;
+        return (
+          <ExtraTransformFields
+            transform={transform}
+            onUpdate={(values) => updateTransform(transform.id, values)}
+          />
+        );
     }
   };
 
@@ -491,7 +476,7 @@ export function KeyframeDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[420px] max-h-[80vh]">
+      <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
@@ -516,7 +501,7 @@ export function KeyframeDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <Label>Position, s:</Label>
               <Input
@@ -551,10 +536,8 @@ export function KeyframeDialog({
                 }}
               />
             </div>
-            {selectedTarget &&
-            isActiveTextSplit(selectedTarget.textSplit) ? (
               <div className="flex items-center gap-2">
-                <Label title="Ritardo tra char/word/line (secondi)">
+                <Label title="Secondi tra un target e il successivo">
                   Stagger, s:
                 </Label>
                 <Input
@@ -581,7 +564,6 @@ export function KeyframeDialog({
                   }}
                 />
               </div>
-            ) : null}
           </div>
 
           <div className="flex items-center gap-4">
@@ -630,6 +612,16 @@ export function KeyframeDialog({
             </div>
           </div>
 
+          <KeyframeGsapOptions
+            key={isOpen ? "gsap-options-open" : "gsap-options-closed"}
+            values={keyframeForm}
+            easingOrder={easingOrder}
+            labelNames={labelNames}
+            onChange={(partial) =>
+              setKeyframeForm((prev) => ({ ...prev, ...partial }))
+            }
+          />
+
           <Card className="px-4 py-2 ">
             <div className="flex items-center justify-between mb-2">
               <Label className="text-md font-bold">Transforms</Label>
@@ -643,12 +635,12 @@ export function KeyframeDialog({
                     Add Transform
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-40 p-1" align="end">
+                <PopoverContent className="w-52 max-h-80 overflow-y-auto p-1" align="end">
                   <div className="space-y-1">
                     {transformOptions.map(({ value, label }) => {
-                      const isUsed = keyframeForm.transforms.some(
-                        (t) => t.type === value
-                      );
+                      const isUsed =
+                        !transformAllowsMultiple(value) &&
+                        keyframeForm.transforms.some((t) => t.type === value);
                       return (
                         <Button
                           key={value}
@@ -680,7 +672,7 @@ export function KeyframeDialog({
               {keyframeForm.transforms.map((transform) => (
                 <div
                   key={transform.id}
-                  className="flex items-center justify-start gap-2 mb-2"
+                  className="flex flex-wrap items-start justify-start gap-2 mb-2"
                 >
                   <span className="text-sm font-medium capitalize">
                     {transform.type}

@@ -22,7 +22,7 @@ type Props = {
 function rulePassesHit(
   rule: Model3dInteractionRule,
   root: THREE.Object3D,
-  event: PointerEvent,
+  event: { clientX: number; clientY: number },
   camera: THREE.Camera,
   domElement: HTMLElement
 ): boolean {
@@ -55,6 +55,7 @@ export function Model3dInteractionLayer({
 }: Props) {
   const { camera, gl } = useThree();
   const activeTweenRef = useRef<Map<string, gsap.core.Tween>>(new Map());
+  const gsapContextRef = useRef<gsap.Context | null>(null);
 
   const interactions = useMemo(
     () => normalizeModel3dInteraction(config),
@@ -73,6 +74,8 @@ export function Model3dInteractionLayer({
     if (rules.length === 0) return;
 
     const dom = gl.domElement;
+    const ctx = gsap.context(() => {}, dom);
+    gsapContextRef.current = ctx;
     const runtime = {
       onUpdate: () => {
         const root = rootRef.current;
@@ -81,7 +84,10 @@ export function Model3dInteractionLayer({
       },
     };
 
-    const runRule = (rule: Model3dInteractionRule, event: PointerEvent) => {
+    const runRule = (
+      rule: Model3dInteractionRule,
+      event: { clientX: number; clientY: number }
+    ) => {
       const root = rootRef.current;
       if (!root) return;
       if (!rulePassesHit(rule, root, event, camera, dom)) return;
@@ -89,17 +95,19 @@ export function Model3dInteractionLayer({
       const prev = activeTweenRef.current.get(rule.id);
       prev?.kill();
 
-      const tween = runModel3dInteractionRule(root, rule, runtime);
+      const tween = ctx.add(() =>
+        runModel3dInteractionRule(root, rule, runtime)
+      );
       if (tween) activeTweenRef.current.set(rule.id, tween);
     };
 
     const byTrigger = (trigger: Model3dInteractionRule["trigger"]) =>
       rules.filter((r) => r.trigger === trigger);
 
-    const onClick = (e: PointerEvent) => {
+    const onClick = (e: MouseEvent) => {
       byTrigger("click").forEach((r) => runRule(r, e));
     };
-    const onDblClick = (e: PointerEvent) => {
+    const onDblClick = (e: MouseEvent) => {
       byTrigger("doubleClick").forEach((r) => runRule(r, e));
     };
     const onEnter = (e: PointerEvent) => {
@@ -128,8 +136,9 @@ export function Model3dInteractionLayer({
       dom.removeEventListener("pointerenter", onEnter);
       dom.removeEventListener("pointerleave", onLeave);
       if (!rules.length) dom.style.cursor = "";
-      activeTweenRef.current.forEach((t) => t.kill());
       activeTweenRef.current.clear();
+      ctx.revert();
+      if (gsapContextRef.current === ctx) gsapContextRef.current = null;
     };
   }, [rules, gl, camera, rootRef, targetId]);
 

@@ -4,6 +4,7 @@ import {
   scrollTriggerStartForPin,
   scrollTriggerTimelineCodeLines,
 } from "./gsap-scroll-pin";
+import { scrollTriggerPinnedSectionCodeLines } from "./scroll-trigger-per-layer";
 import { createAnimationTarget, normalizeTimeline } from "./timeline-migrate";
 
 describe("gsap-scroll-pin", () => {
@@ -26,13 +27,23 @@ describe("gsap-scroll-pin", () => {
     });
     expect(resolveScrollPinSelector(timeline)).toBe(true);
     expect(scrollTriggerStartForPin("top center", true)).toBe("top top");
-    const code = scrollTriggerTimelineCodeLines(timeline, ".section");
-    expect(code.join("\n")).toContain("scrub: true");
-    expect(code.join("\n")).toContain("pin: true");
-    const codeInScroller = scrollTriggerTimelineCodeLines(timeline, ".t", {
+    const master = scrollTriggerTimelineCodeLines(timeline, ".section", {
       scrollerSelector: "#scroller",
     });
-    expect(codeInScroller.join("\n")).toContain('pinType: "transform"');
-    expect(code.join("\n")).toContain('start: "top top"');
+    expect(master.join("\n")).not.toContain("pin: true");
+    const pin = scrollTriggerPinnedSectionCodeLines(
+      timeline,
+      timeline.targets[0],
+      '[data-pin-section="a"]',
+      { scrollerSelector: "#scroller", refreshPriority: 0 }
+    );
+    const pinCode = pin.join("\n");
+    expect(pinCode).toContain('trigger: "[data-pin-section=\\"a\\"]"');
+    expect(() => new Function(`({${pinCode}})`)).not.toThrow();
+    expect(pinCode).toContain("scrub: true");
+    expect(pinCode).toContain("pin: true");
+    expect(pinCode).toContain('pinType: "transform"');
+    expect(pinCode).toContain('start: "top top"');
+    expect(pinCode).toContain("refreshPriority: 0");
   });
 });

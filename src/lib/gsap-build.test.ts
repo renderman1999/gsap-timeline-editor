@@ -57,13 +57,61 @@ describe("gsap-build", () => {
       undefined
     );
 
-    const lines = tweenStepsToCodeLines(
-      createAnimationTarget({ selector: ".target" }),
-      steps
+    const target = createAnimationTarget({ selector: ".target" });
+    const lines = tweenStepsToCodeLines(target, steps);
+    expect(lines[0]).toContain(
+      `tl.to("[data-preview-target=\\"${target.id}\\"]"`
     );
-    expect(lines[0]).toContain('tl.to(".target"');
     expect(lines[0]).toContain("x: 100");
     expect(lines[0]).toContain("0.5");
+  });
+
+  it("exports GSAP position, controls, relative values and plugin props", () => {
+    const steps = buildTweenSteps(
+      [
+        {
+          id: "k-plugin",
+          targetId: "layer-1",
+          delay: 0,
+          position: "+=0.5",
+          duration: 800,
+          easing: "back.out",
+          easeExtra: { param: 1.7 },
+          repeat: -1,
+          yoyo: true,
+          transforms: [
+            {
+              id: "t-move",
+              type: "move",
+              values: { x: "+=20", y: 0, xPercent: -50 },
+            },
+            {
+              id: "t-alpha",
+              type: "autoAlpha",
+              values: { autoAlpha: 0 },
+            },
+            {
+              id: "t-css",
+              type: "cssProp",
+              values: { property: "width", value: "240px" },
+            },
+          ],
+        },
+      ],
+      undefined
+    );
+
+    const target = createAnimationTarget({ selector: ".box" });
+    const line = tweenStepsToCodeLines(target, steps)[0];
+    expect(steps[0].ease).toBe("back.out(1.7)");
+    expect(steps[0].position).toBe("+=0.5");
+    expect(line).toContain('"+=20"');
+    expect(line).toContain("xPercent");
+    expect(line).toContain("autoAlpha");
+    expect(line).toContain("width");
+    expect(line).toContain("repeat: -1");
+    expect(line).toContain("yoyo: true");
+    expect(line).toContain('"+=0.5"');
   });
 
   it("emits motionPath config in code export", () => {

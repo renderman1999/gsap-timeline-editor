@@ -5,18 +5,28 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  clampImageWidth,
   isAllowedImageFile,
   MAX_IMAGE_DATA_URL_BYTES,
+  MAX_IMAGE_WIDTH,
+  MIN_IMAGE_WIDTH,
   readImageFileAsDataUrl,
 } from "@/lib/image-layer";
 import { toast } from "react-toastify";
 
 type Props = {
   imageUrl: string | undefined;
+  imageWidth: number | undefined;
   onChange: (imageUrl: string) => void;
+  onWidthChange: (imageWidth: number) => void;
 };
 
-export function ImageLayerFields({ imageUrl, onChange }: Props) {
+export function ImageLayerFields({
+  imageUrl,
+  imageWidth,
+  onChange,
+  onWidthChange,
+}: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const onFile = async (file: File | undefined) => {
@@ -81,6 +91,24 @@ export function ImageLayerFields({ imageUrl, onChange }: Props) {
             className="h-10 w-10 rounded border border-border object-cover"
           />
         ) : null}
+      </div>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <Label className="text-xxs text-muted-foreground">Larghezza</Label>
+          <span className="text-xxs text-muted-foreground tabular-nums">
+            {clampImageWidth(imageWidth)} px
+          </span>
+        </div>
+        <input
+          type="range"
+          min={MIN_IMAGE_WIDTH}
+          max={MAX_IMAGE_WIDTH}
+          step={4}
+          className="w-full h-2 accent-primary"
+          aria-label="Larghezza immagine"
+          value={clampImageWidth(imageWidth)}
+          onChange={(e) => onWidthChange(Number(e.target.value))}
+        />
       </div>
     </div>
   );

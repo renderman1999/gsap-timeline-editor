@@ -16,7 +16,7 @@ export function transformUsesSvgPlugin(transform: Transform): boolean {
 export function targetHasSvgPluginKeyframes(
   targetId: string,
   keyframes: Keyframe[],
-  initialStates?: Record<string, Transform[]>
+  initialStates?: Record<string, Transform[] | undefined>
 ): boolean {
   const inKf = keyframes.some(
     (k) =>

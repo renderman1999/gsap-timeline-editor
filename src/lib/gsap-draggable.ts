@@ -2,6 +2,7 @@ import { gsap } from "gsap";
 import { Draggable } from "gsap/Draggable";
 import { InertiaPlugin } from "gsap/InertiaPlugin";
 import { boundsClassSelector } from "@/lib/timeline-stage";
+import { domTweenSelector, jsQuotedSelector } from "@/lib/gsap-export-code";
 import type { AnimationTarget, Timeline } from "@/stores/timeline-store";
 
 export const DRAGGABLE_CDN =
@@ -197,10 +198,10 @@ export function draggableCreateCodeLines(
   timeline?: Pick<Timeline, "boundsClass">
 ): string[] {
   if (!isDraggableEnabled(target)) return [];
-  const selector = target.selector.trim();
+  const selector = domTweenSelector(target);
   return [
     `// Draggable: ${target.name}`,
-    `Draggable.create("${escapeJsString(selector)}", ${draggableOptionsToCode(target, timeline)});`,
+    `Draggable.create(${jsQuotedSelector(selector)}, ${draggableOptionsToCode(target, timeline)});`,
   ];
 }
 
